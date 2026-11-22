@@ -153,6 +153,8 @@ const upload = multer({
 });
 
 // Middleware
+const cors = require('cors');
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.json());
@@ -223,7 +225,10 @@ app.get('/api/room/:pin/media', async (req, res) => {
 });
 
 // 4. Direct Client Upload Handler via official handleUpload
-app.post('/api/blob-upload', async (req, res) => {
+app.all('/api/blob-upload', async (req, res) => {
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   try {
     const jsonResponse = await handleUpload({
       body: req.body,
@@ -240,7 +245,8 @@ app.post('/api/blob-upload', async (req, res) => {
             'video/webm',
             'video/x-matroska'
           ],
-          addRandomSuffix: true
+          addRandomSuffix: true,
+          token: process.env.BLOB_READ_WRITE_TOKEN
         };
       },
       onUploadCompleted: async ({ blob }) => {
