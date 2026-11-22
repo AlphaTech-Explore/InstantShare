@@ -385,31 +385,22 @@ async function handleFiles(files) {
   try {
     const uploadedItems = [];
     const totalFiles = files.length;
+    const CLOUD_NAME = 'diubhg6ri';
+    const UPLOAD_PRESET = 'alphabeta_uploads';
 
     for (let i = 0; i < totalFiles; i++) {
       const file = files[i];
       const isVideo = file.type.startsWith('video');
+      const resourceType = isVideo ? 'video' : 'image';
 
-      // 1. Get signed client token from backend
-      const tokenRes = await fetch('/api/get-upload-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: file.name })
-      });
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', UPLOAD_PRESET);
+      formData.append('folder', `rooms/${currentPin}`);
 
-      if (!tokenRes.ok) {
-        // If Vercel Blob token is not configured or in local mode, fallback to server upload
-        throw new Error('FALLBACK_SERVER_UPLOAD');
-      }
-
-      const { uploadUrl, clientToken } = await tokenRes.json();
-
-      // 2. Direct PUT to Vercel Blob with progress
-      await new Promise((resolve, reject) => {
+      const cloudinaryRes = await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('PUT', uploadUrl, true);
-        xhr.setRequestHeader('Authorization', `Bearer ${clientToken}`);
-        xhr.setRequestHeader('x-content-type', file.type || 'application/octet-stream');
+        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`, true);
 
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
@@ -421,13 +412,24 @@ async function handleFiles(files) {
 
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
+            try {
+              const resData = JSON.parse(xhr.responseText);
+              resolve(resData);
+            } catch (e) {
+              reject(new Error('Invalid response from Cloudinary'));
+            }
           } else {
-            reject(new Error(`Vercel Blob returned ${xhr.status}: ${xhr.responseText}`));
+            try {
+              const errData = JSON.parse(xhr.responseText);
+              reject(new Error(errData.error?.message || `Cloudinary error ${xhr.status}`));
+            } catch (e) {
+              reject(new Error(`Upload failed with status ${xhr.status}`));
+            }
           }
         };
-        xhr.onerror = () => reject(new Error('Network error uploading directly to Vercel Blob'));
-        xhr.send(file);
+
+        xhr.onerror = () => reject(new Error('Network error uploading directly to Cloudinary'));
+        xhr.send(formData);
       });
 
       uploadedItems.push({
@@ -437,12 +439,12 @@ async function handleFiles(files) {
         mimeType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
         type: isVideo ? 'video' : 'photo',
         size: file.size,
-        url: uploadUrl,
+        url: cloudinaryRes.secure_url || cloudinaryRes.url,
         uploadedAt: new Date().toISOString()
       });
     }
 
-    // 3. Save media metadata to MongoDB Atlas
+    // Save media metadata to MongoDB Atlas
     const saveRes = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
