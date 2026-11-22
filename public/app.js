@@ -328,10 +328,11 @@ async function loadRoomMedia() {
     const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media`);
     if (res.ok) {
       const data = await res.json();
-      allMedia = data.media || [];
-      render();
-    } else {
-      allMedia = [];
+      const serverMedia = data.media || [];
+      // Merge server media with current media without losing just-uploaded items
+      const serverIds = new Set(serverMedia.map(m => m.id));
+      const localOnly = allMedia.filter(m => !serverIds.has(m.id));
+      allMedia = [...localOnly, ...serverMedia];
       render();
     }
   } catch (err) {

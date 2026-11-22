@@ -258,23 +258,31 @@ app.post('/api/get-upload-url', async (req, res) => {
   }
 });
 
-// 5. Save Uploaded Media Metadata to MongoDB
+// 5. Save Uploaded Media Metadata to MongoDB & in-memory room
 app.post('/api/room/:pin/media-saved', async (req, res) => {
   const pin = req.params.pin.trim();
-  const room = await getRoom(pin);
-  if (!room) {
-    return res.status(404).json({ error: 'Room does not exist' });
-  }
-
   const { items } = req.body;
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'No media items provided' });
   }
 
-  await addMediaToRoom(pin, items);
-  broadcastToPin(pin, { type: 'NEW_MEDIA', items });
+  // Ensure room exists locally immediately so it never blocks
+  if (!localRooms[pin]) {
+    localRooms[pin] = { pin, createdAt: new Date().toISOString(), media: [] };
+  }
+  localRooms[pin].media.unshift(...items);
 
-  res.json({ success: true, count: items.length });
+  // Background async persist to MongoDB (do not hold the HTTP response hostage)
+  (async () => {
+    try {
+      await addMediaToRoom(pin, items);
+    } catch (err) {
+      console.error('Async DB save error:', err.message);
+    }
+  })();
+
+  broadcastToPin(pin, { type: 'NEW_MEDIA', items });
+  return res.json({ success: true, count: items.length });
 });
 
 // 6. Fallback Upload Route (for local testing without Vercel Blob)
