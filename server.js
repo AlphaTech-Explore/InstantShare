@@ -195,14 +195,14 @@ app.get('/api/debug-db', async (req, res) => {
   try {
     const ok = await connectDB();
     const count = ok ? await Room.countDocuments() : 0;
-    const room2011 = ok ? await Room.findOne({ pin: '2011' }) : null;
+    const room2011 = ok ? await Room.findOne({ pin: '2011' }).lean() : null;
     return res.json({
       connected: ok,
       totalRooms: count,
-      room2011: room2011 ? { pin: room2011.pin, mediaCount: room2011.media.length } : null
+      room2011: room2011 ? { pin: room2011.pin, mediaCount: room2011.media.length, media: room2011.media } : null
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
 
@@ -292,15 +292,17 @@ app.post('/api/room/:pin/media-saved', async (req, res) => {
   }
   localRooms[pin].media.unshift(...items);
 
-  // Synchronously await addMediaToRoom in serverless
+  let dbResult = null;
+  let dbError = null;
   try {
-    await addMediaToRoom(pin, items);
+    dbResult = await addMediaToRoom(pin, items);
   } catch (err) {
-    console.error('Save to MongoDB failed:', err.message);
+    dbError = err.message;
+    console.error('Save to MongoDB failed:', err);
   }
 
   broadcastToPin(pin, { type: 'NEW_MEDIA', items });
-  return res.json({ success: true, count: items.length });
+  return res.json({ success: true, count: items.length, dbSaved: !!dbResult, dbError });
 });
 
 // 6. Fallback Upload Route (for local testing without Vercel Blob)
