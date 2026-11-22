@@ -6,71 +6,119 @@ const multer = require('multer');
 const { WebSocketServer, WebSocket } = require('ws');
 const os = require('os');
 
+// Optional Vercel Blob SDK for permanent cloud object storage
+let putBlob = null;
+let delBlob = null;
+try {
+  const blobPkg = require('@vercel/blob');
+  putBlob = blobPkg.put;
+  delBlob = blobPkg.del;
+} catch (e) {
+  // Local fallback
+}
+
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+
+// Initialize WebSocket server (gracefully skipped if running in serverless Vercel)
+let wss = null;
+try {
+  wss = new WebSocketServer({ server });
+} catch (e) {
+  console.log('Running without standalone WebSocket server');
+}
 
 const PORT = process.env.PORT || 3000;
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const DB_FILE = path.join(__dirname, 'rooms.json');
+const IS_VERCEL = !!process.env.VERCEL;
 
-// Ensure uploads folder exists
+// Temporary folder for local uploads
+const UPLOADS_DIR = IS_VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
+const DB_FILE = IS_VERCEL ? '/tmp/rooms.json' : path.join(__dirname, 'rooms.json');
+
 if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
 }
 
-/*
-  Data model in rooms.json:
-  {
-    "rooms": {
-      "1111": {
-        "pin": "1111",
-        "createdAt": "...",
-        "media": [ ...items... ]
-      }
+// In-memory Room Store (synced with KV/Redis if present, else JSON fallback)
+let db = { rooms: {} };
+
+function loadLocalDB() {
+  if (fs.existsSync(DB_FILE)) {
+    try {
+      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+      if (!db.rooms) db.rooms = {};
+    } catch (e) {
+      db = { rooms: {} };
     }
   }
-*/
-let db = { rooms: {} };
-if (fs.existsSync(DB_FILE)) {
+}
+loadLocalDB();
+
+// Helper to save DB (supports Upstash/Vercel KV REST if env variables present)
+async function saveDB() {
+  const kvUrl = process.env.KV_REST_API_URL;
+  const kvToken = process.env.KV_REST_API_TOKEN;
+
+  if (kvUrl && kvToken) {
+    try {
+      await fetch(`${kvUrl}/set/rooms_db`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${kvToken}` },
+        body: JSON.stringify(db)
+      });
+      return;
+    } catch (err) {
+      console.error('KV save error:', err);
+    }
+  }
+
+  // File fallback
   try {
-    db = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-    if (!db.rooms) db.rooms = {};
-  } catch (err) {
-    console.error('Error reading rooms.json, resetting:', err);
-    db = { rooms: {} };
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+  } catch (e) {}
+}
+
+async function syncFromKV() {
+  const kvUrl = process.env.KV_REST_API_URL;
+  const kvToken = process.env.KV_REST_API_TOKEN;
+  if (kvUrl && kvToken) {
+    try {
+      const res = await fetch(`${kvUrl}/get/rooms_db`, {
+        headers: { Authorization: `Bearer ${kvToken}` }
+      });
+      const data = await res.json();
+      if (data && data.result) {
+        db = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+        if (!db.rooms) db.rooms = {};
+      }
+    } catch (e) {
+      console.error('KV fetch error:', e);
+    }
   }
 }
 
-function saveDB() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
-}
-
-// Multer Storage
+// Multer memory or disk storage
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOADS_DIR);
-  },
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, `${uniqueSuffix}${ext}`);
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, `${unique}${ext}`);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowed = /^(image|video)\//i;
-  if (allowed.test(file.mimetype)) {
+  if (/^(image|video)\//i.test(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Only photos and video files are supported!'), false);
+    cb(new Error('Only photos and videos allowed!'), false);
   }
 };
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 200 * 1024 * 1024 }
+  limits: { fileSize: 100 * 1024 * 1024 }
 });
 
 // Middleware
@@ -78,10 +126,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(express.json());
 
-// Track client pins in WebSockets
-// ws.currentPin = "1111"
-
+// Broadcast helpers
 function broadcastToPin(pin, payload) {
+  if (!wss) return;
   const str = JSON.stringify(payload);
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN && client.currentPin === pin) {
@@ -91,34 +138,34 @@ function broadcastToPin(pin, payload) {
 }
 
 function countClientsInPin(pin) {
+  if (!wss) return 1;
   let count = 0;
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN && client.currentPin === pin) {
       count++;
     }
   });
-  return count;
+  return Math.max(1, count);
 }
 
 function broadcastPinStats(pin) {
   const online = countClientsInPin(pin);
-  broadcastToPin(pin, {
-    type: 'ROOM_STATS',
-    onlineCount: online
-  });
+  broadcastToPin(pin, { type: 'ROOM_STATS', onlineCount: online });
 }
 
-// REST APIs for Rooms
+// ==================== REST APIS ====================
 
-// 1. Check/Validate PIN status
-app.get('/api/room/:pin/check', (req, res) => {
+// Check PIN
+app.get('/api/room/:pin/check', async (req, res) => {
+  await syncFromKV();
   const pin = req.params.pin.trim();
   const exists = !!db.rooms[pin];
   res.json({ exists, pin });
 });
 
-// 2. Create Room with PIN (Ensures unique creation)
-app.post('/api/room/create', (req, res) => {
+// Create Room
+app.post('/api/room/create', async (req, res) => {
+  await syncFromKV();
   const { pin } = req.body;
   if (!pin || typeof pin !== 'string') {
     return res.status(400).json({ error: 'PIN is required' });
@@ -131,7 +178,7 @@ app.post('/api/room/create', (req, res) => {
 
   if (db.rooms[cleanPin]) {
     return res.status(409).json({
-      error: `PIN "${cleanPin}" is already taken! Multiple users cannot create a room with the same PIN. Please choose another PIN or join this existing room.`
+      error: `PIN "${cleanPin}" is already taken! Multiple users cannot create a room with the same PIN.`
     });
   }
 
@@ -140,26 +187,24 @@ app.post('/api/room/create', (req, res) => {
     createdAt: new Date().toISOString(),
     media: []
   };
-  saveDB();
+  await saveDB();
 
   res.json({ success: true, pin: cleanPin });
 });
 
-// 3. Join / Get Room Media
-app.get('/api/room/:pin/media', (req, res) => {
+// Get Media for Room
+app.get('/api/room/:pin/media', async (req, res) => {
+  await syncFromKV();
   const pin = req.params.pin.trim();
   if (!db.rooms[pin]) {
-    return res.status(404).json({ error: `Room with PIN "${pin}" does not exist. Please create it first.` });
+    return res.status(404).json({ error: 'Room does not exist' });
   }
-
-  res.json({
-    pin,
-    media: db.rooms[pin].media || []
-  });
+  res.json({ pin, media: db.rooms[pin].media || [] });
 });
 
-// 4. Upload media to a specific PIN room
-app.post('/api/room/:pin/upload', upload.array('files', 20), (req, res) => {
+// Upload media
+app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) => {
+  await syncFromKV();
   const pin = req.params.pin.trim();
   if (!db.rooms[pin]) {
     return res.status(404).json({ error: 'Room does not exist' });
@@ -169,35 +214,55 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), (req, res) => {
     return res.status(400).json({ error: 'No media files received' });
   }
 
-  const newItems = req.files.map(file => {
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  const newItems = [];
+
+  for (const file of req.files) {
     const isVideo = file.mimetype.startsWith('video');
-    return {
+    let fileUrl = `/uploads/${file.filename}`;
+    let blobDownloadUrl = null;
+
+    // If Vercel Blob token is configured, upload directly to Vercel's permanent cloud storage
+    if (blobToken && putBlob) {
+      try {
+        const fileStream = fs.createReadStream(file.path);
+        const blobResult = await putBlob(`rooms/${pin}/${file.filename}`, fileStream, {
+          access: 'public',
+          token: blobToken,
+          contentType: file.mimetype
+        });
+        fileUrl = blobResult.url;
+        blobDownloadUrl = blobResult.downloadUrl;
+      } catch (err) {
+        console.error('Vercel Blob upload error:', err);
+      }
+    }
+
+    newItems.push({
       id: path.parse(file.filename).name,
       filename: file.filename,
       originalName: file.originalname,
       mimeType: file.mimetype,
       type: isVideo ? 'video' : 'photo',
       size: file.size,
-      url: `/uploads/${file.filename}`,
+      url: fileUrl,
+      downloadUrl: blobDownloadUrl || fileUrl,
       uploadedAt: new Date().toISOString()
-    };
-  });
+    });
+  }
 
   if (!db.rooms[pin].media) db.rooms[pin].media = [];
   db.rooms[pin].media.unshift(...newItems);
-  saveDB();
+  await saveDB();
 
-  // Notify everyone in this specific room
-  broadcastToPin(pin, {
-    type: 'NEW_MEDIA',
-    items: newItems
-  });
+  broadcastToPin(pin, { type: 'NEW_MEDIA', items: newItems });
 
   res.json({ success: true, count: newItems.length, items: newItems });
 });
 
-// 5. Delete media from a PIN room
-app.delete('/api/room/:pin/media/:id', (req, res) => {
+// Delete media
+app.delete('/api/room/:pin/media/:id', async (req, res) => {
+  await syncFromKV();
   const pin = req.params.pin.trim();
   const { id } = req.params;
 
@@ -208,54 +273,51 @@ app.delete('/api/room/:pin/media/:id', (req, res) => {
   const index = db.rooms[pin].media.findIndex(m => m.id === id);
   if (index !== -1) {
     const [removed] = db.rooms[pin].media.splice(index, 1);
-    saveDB();
+    await saveDB();
 
-    const filePath = path.join(UPLOADS_DIR, removed.filename);
-    if (fs.existsSync(filePath)) {
+    // If Blob url, delete from Vercel Blob
+    if (delBlob && removed.url && removed.url.includes('vercel-storage.com')) {
       try {
-        fs.unlinkSync(filePath);
-      } catch (err) {
-        console.error('Failed to remove file:', err);
+        await delBlob(removed.url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+      } catch (e) {}
+    } else {
+      const localP = path.join(UPLOADS_DIR, removed.filename);
+      if (fs.existsSync(localP)) {
+        try { fs.unlinkSync(localP); } catch (e) {}
       }
     }
 
-    broadcastToPin(pin, {
-      type: 'DELETE_MEDIA',
-      id
-    });
-
+    broadcastToPin(pin, { type: 'DELETE_MEDIA', id });
     return res.json({ success: true });
   }
 
   res.status(404).json({ error: 'Media not found' });
 });
 
-// WebSockets for Room connection
-wss.on('connection', ws => {
-  ws.currentPin = null;
-
-  ws.on('message', message => {
-    try {
-      const data = JSON.parse(message);
-      if (data.type === 'JOIN_PIN') {
-        const oldPin = ws.currentPin;
-        ws.currentPin = data.pin;
-        if (oldPin) broadcastPinStats(oldPin);
-        if (data.pin) broadcastPinStats(data.pin);
+// WebSocket Server (local and Render)
+if (wss) {
+  wss.on('connection', ws => {
+    ws.currentPin = null;
+    ws.on('message', msg => {
+      try {
+        const data = JSON.parse(msg);
+        if (data.type === 'JOIN_PIN') {
+          const old = ws.currentPin;
+          ws.currentPin = data.pin;
+          if (old) broadcastPinStats(old);
+          if (data.pin) broadcastPinStats(data.pin);
+        }
+      } catch (e) {}
+    });
+    ws.on('close', () => {
+      if (ws.currentPin) {
+        const p = ws.currentPin;
+        ws.currentPin = null;
+        broadcastPinStats(p);
       }
-    } catch (e) {
-      console.error('WS msg error:', e);
-    }
+    });
   });
-
-  ws.on('close', () => {
-    if (ws.currentPin) {
-      const pin = ws.currentPin;
-      ws.currentPin = null;
-      broadcastPinStats(pin);
-    }
-  });
-});
+}
 
 function getLocalIpAddresses() {
   const interfaces = os.networkInterfaces();
@@ -270,14 +332,19 @@ function getLocalIpAddresses() {
   return addresses;
 }
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n======================================================`);
-  console.log(`🚀 InstantShare PIN Room Server is running!`);
-  console.log(`💻 Local access: http://localhost:${PORT}`);
-  const ips = getLocalIpAddresses();
-  if (ips.length > 0) {
-    console.log(`📱 Other devices on same Wi-Fi/Network can open:`);
-    ips.forEach(ip => console.log(`   👉 http://${ip}:${PORT}`));
-  }
-  console.log(`======================================================\n`);
-});
+if (!IS_VERCEL) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n======================================================`);
+    console.log(`🚀 InstantShare Server is running!`);
+    console.log(`💻 Local: http://localhost:${PORT}`);
+    const ips = getLocalIpAddresses();
+    if (ips.length > 0) {
+      console.log(`📱 On Network:`);
+      ips.forEach(ip => console.log(`   👉 http://${ip}:${PORT}`));
+    }
+    console.log(`======================================================\n`);
+  });
+}
+
+// Export app for Vercel Serverless
+module.exports = app;

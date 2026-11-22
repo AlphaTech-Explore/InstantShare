@@ -1,10 +1,11 @@
 // State
 let currentPin = null;
-let currentEnteredPin = ""; // Typed on keypad or PC input
+let currentEnteredPin = "";
 let isCreateMode = false;
 let allMedia = [];
 let socket = null;
 let uploadProgress = null;
+let pollTimer = null;
 
 // DOM Elements - Keypad Gateway
 const pinGateway = document.getElementById('pinGateway');
@@ -15,7 +16,6 @@ const keypadPrompt = document.getElementById('keypadPrompt');
 const pinDots = document.getElementById('pinDots');
 const pinNumberPreview = document.getElementById('pinNumberPreview');
 const pinError = document.getElementById('pinError');
-const desktopPinInput = document.getElementById('desktopPinInput');
 const btnSubmitPin = document.getElementById('btnSubmitPin');
 const btnSubmitLabel = document.getElementById('btnSubmitLabel');
 const btnKeypadClear = document.getElementById('btnKeypadClear');
@@ -24,7 +24,6 @@ const btnKeypadBackspace = document.getElementById('btnKeypadBackspace');
 // Main App DOM
 const headerPinDisplay = document.getElementById('headerPinDisplay');
 const btnSwitchRoom = document.getElementById('btnSwitchRoom');
-const btnChangePinLink = document.getElementById('btnChangePinLink');
 const emptyNotice = document.getElementById('emptyNotice');
 
 const dropArea = document.getElementById('dropArea');
@@ -95,24 +94,9 @@ btnKeypadBackspace.addEventListener('click', () => {
   clearError();
 });
 
-// Desktop text input sync
-if (desktopPinInput) {
-  desktopPinInput.addEventListener('input', (e) => {
-    currentEnteredPin = e.target.value.replace(/[^0-9]/g, '').slice(0, 8);
-    e.target.value = currentEnteredPin;
-    updateKeypadDisplay();
-    clearError();
-  });
-}
-
-// Physical keyboard support for desktop
+// Physical keyboard support for desktop (Numpad + Numbers + Enter)
 window.addEventListener('keydown', (e) => {
   if (!pinGateway.classList.contains('hidden')) {
-    if (e.target === desktopPinInput) {
-      if (e.key === 'Enter') handlePinSubmit();
-      return;
-    }
-
     if (/^[0-9]$/.test(e.key)) {
       if (currentEnteredPin.length < 8) {
         currentEnteredPin += e.key;
@@ -143,10 +127,6 @@ function updateKeypadDisplay() {
     pinNumberPreview.textContent = '_ _ _ _';
   } else {
     pinNumberPreview.textContent = currentEnteredPin.split('').join(' ');
-  }
-
-  if (desktopPinInput && desktopPinInput.value !== currentEnteredPin) {
-    desktopPinInput.value = currentEnteredPin;
   }
 }
 
@@ -242,6 +222,7 @@ function showPinGateway() {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: 'JOIN_PIN', pin: null }));
   }
+  if (pollTimer) clearInterval(pollTimer);
 }
 
 // Enter Room with PIN
@@ -261,54 +242,81 @@ async function enterRoom(pin) {
   pinGateway.classList.add('hidden');
   mainApp.style.display = 'flex';
 
-  // Join WebSocket room
+  // Join WebSocket room if connected
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: 'JOIN_PIN', pin }));
   }
 
   // Load Room Media
   await loadRoomMedia();
+
+  // Start backup polling (essential for Vercel serverless live sync!)
+  startLivePolling();
+}
+
+// Backup live polling for Vercel
+function startLivePolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if (!currentPin) return;
+    try {
+      const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media`);
+      if (res.ok) {
+        const data = await res.json();
+        const incoming = data.media || [];
+        if (incoming.length !== allMedia.length) {
+          allMedia = incoming;
+          render();
+        }
+      }
+    } catch (e) {}
+  }, 3000);
 }
 
 // ==================== WEBSOCKETS ====================
 function initSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  socket = new WebSocket(`${protocol}//${window.location.host}`);
+  try {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${protocol}//${window.location.host}`);
 
-  socket.onopen = () => {
-    if (currentPin) {
-      socket.send(JSON.stringify({ type: 'JOIN_PIN', pin: currentPin }));
-    }
-  };
-
-  socket.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'NEW_MEDIA') {
-        const newItems = data.items.filter(item => !allMedia.some(m => m.id === item.id));
-        allMedia.unshift(...newItems);
-        render();
-
-        const first = newItems[0];
-        const isPhoto = first.type === 'photo';
-        const randomUser = `user_${Math.floor(1000 + Math.random() * 9000)}`;
-        popToast(`<strong>${randomUser}</strong> just dropped a ${isPhoto ? 'photo' : 'video'}! ✨`);
-      } else if (data.type === 'DELETE_MEDIA') {
-        allMedia = allMedia.filter(m => m.id !== data.id);
-        render();
-      } else if (data.type === 'ROOM_STATS') {
-        if (data.onlineCount !== undefined) {
-          onlineCount.textContent = data.onlineCount;
-        }
+    socket.onopen = () => {
+      if (currentPin) {
+        socket.send(JSON.stringify({ type: 'JOIN_PIN', pin: currentPin }));
       }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+    };
 
-  socket.onclose = () => {
-    setTimeout(initSocket, 2000);
-  };
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'NEW_MEDIA') {
+          const newItems = data.items.filter(item => !allMedia.some(m => m.id === item.id));
+          allMedia.unshift(...newItems);
+          render();
+
+          const first = newItems[0];
+          const isPhoto = first.type === 'photo';
+          const randomUser = `user_${Math.floor(1000 + Math.random() * 9000)}`;
+          popToast(`<strong>${randomUser}</strong> just dropped a ${isPhoto ? 'photo' : 'video'}! ✨`);
+        } else if (data.type === 'DELETE_MEDIA') {
+          allMedia = allMedia.filter(m => m.id !== data.id);
+          render();
+        } else if (data.type === 'ROOM_STATS') {
+          if (data.onlineCount !== undefined) {
+            onlineCount.textContent = data.onlineCount;
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    socket.onclose = () => {
+      // Don't spam retries on Vercel
+      setTimeout(initSocket, 5000);
+    };
+  } catch (err) {
+    // Falls back gracefully to live polling
+  }
 }
 
 // ==================== LOAD MEDIA FOR ROOM ====================
@@ -516,7 +524,7 @@ window.openModal = function(id) {
 
   modalName.textContent = item.originalName;
   modalMeta.textContent = `Uploaded Just Now • ${formatBytes(item.size)}`;
-  modalRawBtn.href = item.url;
+  modalRawBtn.href = item.downloadUrl || item.url;
 
   if (item.type === 'video') {
     modalMedia.innerHTML = `
@@ -595,7 +603,7 @@ async function checkUrlPin() {
     }
   }
 
-  // Always force lockscreen / PIN entry by default for security
+  // Force lockscreen by default
   showPinGateway();
 }
 

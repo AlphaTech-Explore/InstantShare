@@ -17,7 +17,7 @@
     <span class="toast-text" id="toastMessage"><strong>user_3892</strong> just dropped a photo! • 5 people watching right now</span>
   </div>
 
-  <!-- PIN GATEWAY (Adaptive: sleek horizontal desktop card + mobile keypad) -->
+  <!-- PIN GATEWAY (Adaptive: Beautiful card on PC & mobile) -->
   <div class="pin-gateway-overlay" id="pinGateway">
     <div class="pin-card-wrapper">
       
@@ -47,12 +47,7 @@
       <!-- Error message bar -->
       <div class="pin-error-msg" id="pinError"></div>
 
-      <!-- Desktop direct input hint (shown on PC) -->
-      <div class="desktop-pin-bar">
-        <input type="text" id="desktopPinInput" class="desktop-hidden-input" placeholder="Type PIN on keyboard..." maxlength="8" autocomplete="off" />
-      </div>
-
-      <!-- Built-in Numeric Keypad -->
+      <!-- Built-in Numeric Keypad (Clean, responsive, never scrolls on PC) -->
       <div class="keypad-grid" id="mobileKeypad">
         <button type="button" class="keypad-btn" data-key="1">1</button>
         <button type="button" class="keypad-btn" data-key="2">2</button>
@@ -76,7 +71,7 @@
         <span id="btnSubmitLabel">Enter Room 🚀</span>
       </button>
 
-      <div class="desktop-keyboard-hint">Tip: You can also use your keyboard numpad & Enter directly</div>
+      <div class="desktop-keyboard-hint">You can also use your keyboard numpad & Enter directly</div>
     </div>
   </div>
 
@@ -173,7 +168,7 @@
       <div class="share-bar">
         <div class="share-url-group">
           <span class="share-label">Live Link:</span>
-          <span class="share-url-text" id="liveUrlText">10.43.205.66:3000/?pin=1111</span>
+          <span class="share-url-text" id="liveUrlText">instantshare.vercel.app/?pin=1111</span>
         </div>
         <div class="share-btn-group">
           <button class="share-action-btn" id="btnCopy">
