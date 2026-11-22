@@ -384,14 +384,22 @@ async function handleFiles(files) {
   render();
 
   try {
-    const uploadedItems = [];
-    const totalFiles = files.length;
+    const fileList = Array.from(files).filter(f => f && f.size > 0);
+    const totalFiles = fileList.length;
+    if (totalFiles === 0) return;
+
     const CLOUD_NAME = 'diubhg6ri';
     const UPLOAD_PRESET = 'alphabeta_uploads';
+    const progressPerFile = new Array(totalFiles).fill(0);
 
-    for (let i = 0; i < totalFiles; i++) {
-      const file = files[i];
-      if (!file) continue;
+    function updateAggregatedProgress() {
+      const sum = progressPerFile.reduce((a, b) => a + b, 0);
+      const overall = Math.round(sum / totalFiles);
+      updateUploadCardProgress(overall);
+    }
+
+    // Upload files concurrently in parallel (up to 4 at a time)
+    const uploadSingleFile = async (file, index) => {
       const fileMime = file.type || '';
       const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || '');
       const resourceType = isVideo ? 'video' : 'image';
@@ -407,43 +415,37 @@ async function handleFiles(files) {
 
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
-            const filePercent = (e.loaded / e.total) * 100;
-            const totalPercent = Math.round(((i + (filePercent / 100)) / totalFiles) * 100);
-            updateUploadCardProgress(totalPercent);
+            progressPerFile[index] = (e.loaded / e.total) * 100;
+            updateAggregatedProgress();
           }
         };
 
         xhr.onload = () => {
-          console.log('Cloudinary status:', xhr.status, xhr.responseText);
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
-              const resData = JSON.parse(xhr.responseText);
-              resolve(resData);
+              progressPerFile[index] = 100;
+              updateAggregatedProgress();
+              resolve(JSON.parse(xhr.responseText));
             } catch (e) {
-              reject(new Error('Invalid response from Cloudinary: ' + e.message));
+              reject(new Error('Invalid response from Cloudinary'));
             }
           } else {
             try {
               const errData = JSON.parse(xhr.responseText);
               reject(new Error(errData.error?.message || `Cloudinary error ${xhr.status}`));
             } catch (e) {
-              reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
+              reject(new Error(`Upload failed with status ${xhr.status}`));
             }
           }
         };
 
-        xhr.onerror = (err) => {
-          console.error('Cloudinary network error:', err);
-          reject(new Error('Network error uploading directly to Cloudinary'));
-        };
-        xhr.ontimeout = () => {
-          reject(new Error('Cloudinary upload timed out'));
-        };
+        xhr.onerror = () => reject(new Error(`Network error uploading "${file.name}" to Cloudinary`));
+        xhr.ontimeout = () => reject(new Error(`Upload timed out for "${file.name}"`));
         xhr.send(formData);
       });
 
-      uploadedItems.push({
-        id: `media_${Date.now()}_${i}`,
+      return {
+        id: `media_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`,
         filename: file.name,
         originalName: file.name,
         mimeType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
@@ -452,10 +454,13 @@ async function handleFiles(files) {
         url: cloudinaryRes.secure_url || cloudinaryRes.url,
         publicId: cloudinaryRes.public_id,
         uploadedAt: new Date().toISOString()
-      });
-    }
+      };
+    };
 
-    console.log('Uploaded to Cloudinary successfully:', uploadedItems);
+    // Parallel upload of all selected files
+    const uploadedItems = await Promise.all(fileList.map((file, i) => uploadSingleFile(file, i)));
+
+    console.log('Uploaded all files to Cloudinary successfully:', uploadedItems);
 
     // Save media metadata to MongoDB Atlas (with a safety timeout)
     try {
