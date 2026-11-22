@@ -8,11 +8,13 @@ const { WebSocketServer, WebSocket } = require('ws');
 const os = require('os');
 const mongoose = require('mongoose');
 
-// Vercel Blob client upload handler
+// Vercel Blob client upload helpers
 let handleUpload = null;
+let generateClientTokenFromReadWriteToken = null;
 try {
   const blobClient = require('@vercel/blob/client');
   handleUpload = blobClient.handleUpload;
+  generateClientTokenFromReadWriteToken = blobClient.generateClientTokenFromReadWriteToken;
 } catch (e) {}
 
 const app = express();
@@ -220,37 +222,31 @@ app.get('/api/room/:pin/media', async (req, res) => {
   res.json({ pin, media: room.media || [] });
 });
 
-// 4. Vercel Blob Direct Client Upload Handler
-// This allows the browser to bypass Vercel's 4.5MB limit and upload directly to Vercel Blob!
-app.post('/api/blob-upload', async (req, res) => {
+// 4. Direct Client Upload Token Generator
+// Reliable endpoint to mint a short-lived client upload token for the browser
+app.post('/api/get-blob-token', async (req, res) => {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!blobToken || !handleUpload) {
-    return res.status(400).json({ error: 'BLOB_READ_WRITE_TOKEN is missing or @vercel/blob not installed' });
+  if (!blobToken) {
+    return res.status(400).json({ error: 'BLOB_READ_WRITE_TOKEN is not set in Vercel project environment variables.' });
   }
 
-  try {
-    const jsonResponse = await handleUpload({
-      body: req.body,
-      request: req,
-      token: blobToken,
-      onBeforeGenerateToken: async (pathname) => {
-        return {
-          allowedContentTypes: [
-            'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-            'video/mp4', 'video/webm', 'video/quicktime'
-          ],
-          addRandomSuffix: true
-        };
-      },
-      onUploadCompleted: async ({ blob }) => {
-        // Blob finished uploading directly from browser
-      }
-    });
+  const { filename } = req.body || {};
+  const pathname = filename ? `rooms/${Date.now()}-${filename}` : `rooms/${Date.now()}`;
 
-    res.json(jsonResponse);
+  try {
+    if (generateClientTokenFromReadWriteToken) {
+      const clientToken = await generateClientTokenFromReadWriteToken({
+        token: blobToken,
+        pathname,
+        validUntil: Date.now() + 60 * 60 * 1000 // 1 hour
+      });
+      return res.json({ clientToken, pathname });
+    } else {
+      return res.status(500).json({ error: 'SDK function generateClientTokenFromReadWriteToken unavailable' });
+    }
   } catch (err) {
-    console.error('Blob token generation error:', err);
-    res.status(400).json({ error: err.message });
+    console.error('Failed to generate client token:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

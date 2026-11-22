@@ -378,7 +378,7 @@ async function handleFiles(files) {
   uploadProgress = 0;
   render();
 
-  // 1. Try Vercel Blob Direct Browser Upload
+  // 1. Direct Browser Upload via Client Token
   if (window.vercelBlobUpload) {
     try {
       const uploadedItems = [];
@@ -388,9 +388,24 @@ async function handleFiles(files) {
         const file = files[i];
         const isVideo = file.type.startsWith('video');
 
-        const blobResult = await window.vercelBlobUpload(file.name, file, {
+        // Fetch short-lived client upload token
+        const tokenRes = await fetch('/api/get-blob-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name })
+        });
+
+        if (!tokenRes.ok) {
+          const errData = await tokenRes.json();
+          throw new Error(errData.error || 'Failed to acquire upload token');
+        }
+
+        const { clientToken, pathname } = await tokenRes.json();
+
+        // Upload directly from browser to Vercel's global Blob storage
+        const blobResult = await window.vercelBlobUpload(pathname, file, {
           access: 'public',
-          handleUploadUrl: '/api/blob-upload',
+          clientToken,
           onUploadProgress: (progress) => {
             const filePercent = Math.round(progress.percentage);
             const totalPercent = Math.round(((i + (filePercent / 100)) / totalFiles) * 100);
@@ -426,10 +441,10 @@ async function handleFiles(files) {
       render();
       return;
     } catch (err) {
-      console.error('Vercel Blob direct upload failed:', err);
+      console.error('Direct upload error:', err);
       uploadProgress = null;
       render();
-      alert('Upload failed: ' + (err.message || 'Error uploading to Vercel Blob'));
+      alert('Upload failed: ' + (err.message || 'Error uploading file'));
       return;
     }
   }
