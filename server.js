@@ -286,20 +286,18 @@ app.post('/api/room/:pin/media-saved', async (req, res) => {
     return res.status(400).json({ error: 'No media items provided' });
   }
 
-  // Ensure room exists locally immediately so it never blocks
+  // Ensure room exists locally immediately
   if (!localRooms[pin]) {
     localRooms[pin] = { pin, createdAt: new Date().toISOString(), media: [] };
   }
   localRooms[pin].media.unshift(...items);
 
-  // Background async persist to MongoDB (do not hold the HTTP response hostage)
-  (async () => {
-    try {
-      await addMediaToRoom(pin, items);
-    } catch (err) {
-      console.error('Async DB save error:', err.message);
-    }
-  })();
+  // Synchronously await addMediaToRoom in serverless
+  try {
+    await addMediaToRoom(pin, items);
+  } catch (err) {
+    console.error('Save to MongoDB failed:', err.message);
+  }
 
   broadcastToPin(pin, { type: 'NEW_MEDIA', items });
   return res.json({ success: true, count: items.length });
