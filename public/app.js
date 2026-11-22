@@ -413,24 +413,31 @@ async function handleFiles(files) {
         };
 
         xhr.onload = () => {
+          console.log('Cloudinary status:', xhr.status, xhr.responseText);
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               const resData = JSON.parse(xhr.responseText);
               resolve(resData);
             } catch (e) {
-              reject(new Error('Invalid response from Cloudinary'));
+              reject(new Error('Invalid response from Cloudinary: ' + e.message));
             }
           } else {
             try {
               const errData = JSON.parse(xhr.responseText);
               reject(new Error(errData.error?.message || `Cloudinary error ${xhr.status}`));
             } catch (e) {
-              reject(new Error(`Upload failed with status ${xhr.status}`));
+              reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.responseText}`));
             }
           }
         };
 
-        xhr.onerror = () => reject(new Error('Network error uploading directly to Cloudinary'));
+        xhr.onerror = (err) => {
+          console.error('Cloudinary network error:', err);
+          reject(new Error('Network error uploading directly to Cloudinary'));
+        };
+        xhr.ontimeout = () => {
+          reject(new Error('Cloudinary upload timed out'));
+        };
         xhr.send(formData);
       });
 
@@ -446,15 +453,24 @@ async function handleFiles(files) {
       });
     }
 
-    // Save media metadata to MongoDB Atlas
-    const saveRes = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: uploadedItems })
-    });
+    console.log('Uploaded to Cloudinary successfully:', uploadedItems);
 
-    if (!saveRes.ok) {
-      throw new Error('Failed to save media metadata in database');
+    // Save media metadata to MongoDB Atlas (with a safety timeout)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const saveRes = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: uploadedItems }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (!saveRes.ok) {
+        console.warn('Backend metadata save returned:', saveRes.status);
+      }
+    } catch (saveErr) {
+      console.warn('Metadata save error (displaying locally anyway):', saveErr);
     }
 
     uploadProgress = null;
