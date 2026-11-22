@@ -390,7 +390,9 @@ async function handleFiles(files) {
 
     for (let i = 0; i < totalFiles; i++) {
       const file = files[i];
-      const isVideo = file.type.startsWith('video');
+      if (!file) continue;
+      const fileMime = file.type || '';
+      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || '');
       const resourceType = isVideo ? 'video' : 'image';
 
       const formData = new FormData();
