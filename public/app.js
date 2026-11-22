@@ -449,6 +449,7 @@ async function handleFiles(files) {
         type: isVideo ? 'video' : 'photo',
         size: file.size,
         url: cloudinaryRes.secure_url || cloudinaryRes.url,
+        publicId: cloudinaryRes.public_id,
         uploadedAt: new Date().toISOString()
       });
     }

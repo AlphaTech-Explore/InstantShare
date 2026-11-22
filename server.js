@@ -41,7 +41,8 @@ const roomSchema = new mongoose.Schema({
       mimeType: String,
       type: String, // 'photo' or 'video'
       size: Number,
-      url: String, // Permanent Vercel Blob CDN url
+      url: String, // Permanent CDN url
+      publicId: String, // Cloudinary public_id for permanent deletion
       uploadedAt: { type: String, default: () => new Date().toISOString() }
     }
   ]
@@ -308,7 +309,20 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) =>
   res.json({ success: true, count: newItems.length, items: newItems });
 });
 
-// 7. Delete media
+// Configure Cloudinary SDK if credentials exist
+let cloudinary = null;
+try {
+  cloudinary = require('cloudinary').v2;
+  if (process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_API_KEY) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'diubhg6ri',
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+  }
+} catch (e) {}
+
+// 7. Delete media (removes from database AND permanently deletes from Cloudinary)
 app.delete('/api/room/:pin/media/:id', async (req, res) => {
   const pin = req.params.pin.trim();
   const { id } = req.params;
@@ -318,8 +332,19 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
     return res.status(404).json({ error: 'Media not found' });
   }
 
+  // Permanently delete from Cloudinary
+  if (removed.publicId && cloudinary && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    try {
+      const resourceType = removed.type === 'video' ? 'video' : 'image';
+      await cloudinary.uploader.destroy(removed.publicId, { resource_type: resourceType });
+      console.log(`Permanently destroyed from Cloudinary: ${removed.publicId}`);
+    } catch (cErr) {
+      console.error('Cloudinary destroy error:', cErr.message);
+    }
+  }
+
   broadcastToPin(pin, { type: 'DELETE_MEDIA', id });
-  res.json({ success: true });
+  res.json({ success: true, removedPermanently: true });
 });
 
 // WebSocket Server (local and VPS)
