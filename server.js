@@ -33,20 +33,8 @@ const IS_VERCEL = !!process.env.VERCEL;
 const roomSchema = new mongoose.Schema({
   pin: { type: String, required: true, unique: true, index: true },
   createdAt: { type: Date, default: Date.now },
-  media: [
-    {
-      id: String,
-      filename: String,
-      originalName: String,
-      mimeType: String,
-      type: String, // 'photo' or 'video'
-      size: Number,
-      url: String, // Permanent CDN url
-      publicId: String, // Cloudinary public_id for permanent deletion
-      uploadedAt: { type: String, default: () => new Date().toISOString() }
-    }
-  ]
-});
+  media: { type: Array, default: [] }
+}, { strict: false });
 
 // Clear existing compiled model to avoid schema mismatch
 if (mongoose.models.Room) {
@@ -105,10 +93,23 @@ async function createRoom(pin) {
 async function addMediaToRoom(pin, items) {
   const hasDB = await connectDB();
   if (hasDB) {
+    const rawItems = items.map(item => ({
+      id: String(item.id || ''),
+      filename: String(item.filename || ''),
+      originalName: String(item.originalName || ''),
+      mimeType: String(item.mimeType || ''),
+      type: String(item.type || 'photo'),
+      size: Number(item.size || 0),
+      url: String(item.url || ''),
+      publicId: String(item.publicId || ''),
+      uploadedAt: String(item.uploadedAt || new Date().toISOString())
+    }));
+
+    // Update using native collection or model to avoid array nesting issues
     const updated = await Room.findOneAndUpdate(
       { pin },
-      { $push: { media: { $each: items, $position: 0 } } },
-      { new: true }
+      { $push: { media: { $each: rawItems, $position: 0 } } },
+      { new: true, runValidators: false }
     );
     return updated ? updated.media : [];
   } else {
