@@ -6,14 +6,17 @@ const multer = require('multer');
 const { WebSocketServer, WebSocket } = require('ws');
 const os = require('os');
 
-// Vercel Blob SDK for permanent cloud object storage
+// Vercel Blob SDK
 let putBlob = null;
 let delBlob = null;
+let listBlob = null;
 let headBlob = null;
+
 try {
   const blobPkg = require('@vercel/blob');
   putBlob = blobPkg.put;
   delBlob = blobPkg.del;
+  listBlob = blobPkg.list;
   headBlob = blobPkg.head;
 } catch (e) {
   // Local fallback
@@ -22,13 +25,11 @@ try {
 const app = express();
 const server = http.createServer(app);
 
-// Initialize WebSocket server (runs when self-hosted or local, gracefully bypassed on Vercel)
+// WebSocket server (runs locally/on VPS, bypassed gracefully on Vercel serverless)
 let wss = null;
 try {
   wss = new WebSocketServer({ server });
-} catch (e) {
-  console.log('Running without standalone WebSocket server');
-}
+} catch (e) {}
 
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = !!process.env.VERCEL;
@@ -56,93 +57,85 @@ function loadLocalDB() {
 }
 loadLocalDB();
 
-// -------------------------------------------------------------
-// PERMANENT STORAGE ENGINE:
-// 1. Vercel Blob: stores 'rooms_meta/rooms_index.json' in Blob! (100% permanent, $0 extra db needed)
-// 2. Vercel KV / Upstash Redis (if configured)
-// 3. Local JSON file fallback
-// -------------------------------------------------------------
+// -----------------------------------------------------------------------
+// BULLETPROOF PER-PIN BLOB PERSISTENCE
+// Each room PIN has its own dedicated file in Vercel Blob:
+//   "rooms/{pin}/metadata.json"
+// Even if Vercel restarts 100 times, the room & its files NEVER disappear.
+// -----------------------------------------------------------------------
 
-async function syncRooms() {
+async function fetchRoomFromBlob(pin) {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const kvUrl = process.env.KV_REST_API_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN;
+  if (!blobToken || !listBlob) return null;
 
-  // 1. Try Vercel Blob (default permanent storage for Vercel)
-  if (blobToken && headBlob) {
-    try {
-      const details = await headBlob('rooms_meta/rooms_index.json', { token: blobToken });
-      if (details && details.url) {
-        // Append timestamp to bypass CDN cache on fresh reads
-        const res = await fetch(`${details.url}?t=${Date.now()}`);
-        if (res.ok) {
-          const remoteDB = await res.json();
-          if (remoteDB && remoteDB.rooms) {
-            db = remoteDB;
-            return;
-          }
-        }
-      }
-    } catch (err) {
-      // Not yet created in Blob or initial setup
+  try {
+    // 1. Check if metadata.json exists for this specific pin
+    const { blobs } = await listBlob({
+      prefix: `rooms/${pin}/`,
+      token: blobToken
+    });
+
+    if (!blobs || blobs.length === 0) {
+      return null;
     }
-  }
 
-  // 2. Try Vercel KV
-  if (kvUrl && kvToken) {
-    try {
-      const res = await fetch(`${kvUrl}/get/rooms_db`, {
-        headers: { Authorization: `Bearer ${kvToken}` }
-      });
-      const data = await res.json();
-      if (data && data.result) {
-        db = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-        if (!db.rooms) db.rooms = {};
-        return;
+    const metaBlob = blobs.find(b => b.pathname === `rooms/${pin}/metadata.json`);
+    if (metaBlob && metaBlob.url) {
+      const res = await fetch(`${metaBlob.url}?t=${Date.now()}`);
+      if (res.ok) {
+        const roomData = await res.json();
+        return roomData;
       }
-    } catch (err) {
-      console.error('KV sync error:', err);
     }
-  }
 
-  // 3. Fallback to local file
-  loadLocalDB();
+    // 2. If metadata.json was missing but files exist under rooms/{pin}/, auto-reconstruct!
+    const mediaBlobs = blobs.filter(b => b.pathname !== `rooms/${pin}/metadata.json`);
+    if (mediaBlobs.length > 0) {
+      const reconstructed = {
+        pin,
+        createdAt: mediaBlobs[0].uploadedAt,
+        media: mediaBlobs.map(b => {
+          const filename = path.basename(b.pathname);
+          const isVideo = /\.(mp4|webm|mov)$/i.test(filename);
+          return {
+            id: path.parse(filename).name,
+            filename,
+            originalName: filename,
+            type: isVideo ? 'video' : 'photo',
+            size: b.size,
+            url: b.url,
+            downloadUrl: b.downloadUrl || b.url,
+            uploadedAt: b.uploadedAt
+          };
+        })
+      };
+      return reconstructed;
+    }
+  } catch (err) {
+    console.error(`Blob sync error for room ${pin}:`, err);
+  }
+  return null;
 }
 
-async function persistRooms() {
+async function saveRoomToBlob(pin, roomData) {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  const kvUrl = process.env.KV_REST_API_URL;
-  const kvToken = process.env.KV_REST_API_TOKEN;
+  if (!blobToken || !putBlob) return;
 
-  // 1. Save to Vercel Blob (Permanent cloud storage!)
-  if (blobToken && putBlob) {
-    try {
-      await putBlob('rooms_meta/rooms_index.json', JSON.stringify(db, null, 2), {
-        access: 'public',
-        token: blobToken,
-        contentType: 'application/json',
-        allowOverwrite: true,
-        cacheControlMaxAge: 0 // Prevent stale CDN caching
-      });
-    } catch (err) {
-      console.error('Blob persist error:', err);
-    }
+  try {
+    await putBlob(`rooms/${pin}/metadata.json`, JSON.stringify(roomData, null, 2), {
+      access: 'public',
+      token: blobToken,
+      contentType: 'application/json',
+      allowOverwrite: true,
+      cacheControlMaxAge: 0
+    });
+  } catch (err) {
+    console.error(`Blob save error for room ${pin}:`, err);
   }
+}
 
-  // 2. Save to Vercel KV if available
-  if (kvUrl && kvToken) {
-    try {
-      await fetch(`${kvUrl}/set/rooms_db`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${kvToken}` },
-        body: JSON.stringify(db)
-      });
-    } catch (err) {
-      console.error('KV persist error:', err);
-    }
-  }
-
-  // 3. Local file write
+// Local filesystem persist
+function saveLocalDB() {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
   } catch (e) {}
@@ -208,15 +201,25 @@ function broadcastPinStats(pin) {
 
 // Check PIN
 app.get('/api/room/:pin/check', async (req, res) => {
-  await syncRooms();
   const pin = req.params.pin.trim();
-  const exists = !!db.rooms[pin];
-  res.json({ exists, pin });
+
+  // 1. Check in memory / local DB first
+  if (db.rooms[pin]) {
+    return res.json({ exists: true, pin });
+  }
+
+  // 2. Fetch directly from permanent Vercel Blob
+  const blobRoom = await fetchRoomFromBlob(pin);
+  if (blobRoom) {
+    db.rooms[pin] = blobRoom;
+    return res.json({ exists: true, pin });
+  }
+
+  res.json({ exists: false, pin });
 });
 
 // Create Room
 app.post('/api/room/create', async (req, res) => {
-  await syncRooms();
   const { pin } = req.body;
   if (!pin || typeof pin !== 'string') {
     return res.status(400).json({ error: 'PIN is required' });
@@ -227,38 +230,65 @@ app.post('/api/room/create', async (req, res) => {
     return res.status(400).json({ error: 'PIN must be at least 3 digits' });
   }
 
+  // Check if room already exists locally or in Vercel Blob
   if (db.rooms[cleanPin]) {
     return res.status(409).json({
       error: `PIN "${cleanPin}" is already taken! Multiple users cannot create a room with the same PIN.`
     });
   }
 
-  db.rooms[cleanPin] = {
+  const existingInBlob = await fetchRoomFromBlob(cleanPin);
+  if (existingInBlob) {
+    db.rooms[cleanPin] = existingInBlob;
+    return res.status(409).json({
+      error: `PIN "${cleanPin}" is already taken! Multiple users cannot create a room with the same PIN.`
+    });
+  }
+
+  const newRoom = {
     pin: cleanPin,
     createdAt: new Date().toISOString(),
     media: []
   };
-  await persistRooms();
+
+  db.rooms[cleanPin] = newRoom;
+  saveLocalDB();
+  await saveRoomToBlob(cleanPin, newRoom);
 
   res.json({ success: true, pin: cleanPin });
 });
 
 // Get Media for Room
 app.get('/api/room/:pin/media', async (req, res) => {
-  await syncRooms();
   const pin = req.params.pin.trim();
+
+  // If not in cache, sync from Vercel Blob
+  if (!db.rooms[pin]) {
+    const blobRoom = await fetchRoomFromBlob(pin);
+    if (blobRoom) {
+      db.rooms[pin] = blobRoom;
+    }
+  }
+
   if (!db.rooms[pin]) {
     return res.status(404).json({ error: 'Room does not exist' });
   }
+
   res.json({ pin, media: db.rooms[pin].media || [] });
 });
 
 // Upload media
 app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) => {
-  await syncRooms();
   const pin = req.params.pin.trim();
+
+  // Sync room from Blob if cold start
   if (!db.rooms[pin]) {
-    return res.status(404).json({ error: 'Room does not exist' });
+    const blobRoom = await fetchRoomFromBlob(pin);
+    if (blobRoom) {
+      db.rooms[pin] = blobRoom;
+    } else {
+      return res.status(404).json({ error: 'Room does not exist' });
+    }
   }
 
   if (!req.files || req.files.length === 0) {
@@ -273,7 +303,7 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) =>
     let fileUrl = `/uploads/${file.filename}`;
     let blobDownloadUrl = null;
 
-    // Permanent cloud storage upload to Vercel Blob
+    // Permanent cloud upload to Vercel Blob under rooms/{pin}/
     if (blobToken && putBlob) {
       try {
         const fileStream = fs.createReadStream(file.path);
@@ -304,7 +334,9 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) =>
 
   if (!db.rooms[pin].media) db.rooms[pin].media = [];
   db.rooms[pin].media.unshift(...newItems);
-  await persistRooms();
+
+  saveLocalDB();
+  await saveRoomToBlob(pin, db.rooms[pin]);
 
   broadcastToPin(pin, { type: 'NEW_MEDIA', items: newItems });
 
@@ -313,9 +345,13 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) =>
 
 // Delete media
 app.delete('/api/room/:pin/media/:id', async (req, res) => {
-  await syncRooms();
   const pin = req.params.pin.trim();
   const { id } = req.params;
+
+  if (!db.rooms[pin]) {
+    const blobRoom = await fetchRoomFromBlob(pin);
+    if (blobRoom) db.rooms[pin] = blobRoom;
+  }
 
   if (!db.rooms[pin] || !db.rooms[pin].media) {
     return res.status(404).json({ error: 'Room not found' });
@@ -324,7 +360,8 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
   const index = db.rooms[pin].media.findIndex(m => m.id === id);
   if (index !== -1) {
     const [removed] = db.rooms[pin].media.splice(index, 1);
-    await persistRooms();
+    saveLocalDB();
+    await saveRoomToBlob(pin, db.rooms[pin]);
 
     // If Blob url, delete from Vercel Blob
     if (delBlob && removed.url && removed.url.includes('vercel-storage.com')) {
@@ -345,7 +382,7 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
   res.status(404).json({ error: 'Media not found' });
 });
 
-// WebSocket Server (local and Render)
+// WebSocket Server (local and self-hosted)
 if (wss) {
   wss.on('connection', ws => {
     ws.currentPin = null;
@@ -397,5 +434,4 @@ if (!IS_VERCEL) {
   });
 }
 
-// Export app for Vercel Serverless
 module.exports = app;
