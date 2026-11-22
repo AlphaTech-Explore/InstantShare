@@ -382,55 +382,83 @@ async function handleFiles(files) {
   uploadProgress = 0;
   render();
 
-  // 1. Direct Browser Upload via Client SDK
-  if (window.vercelBlobUpload) {
-    try {
-      const uploadedItems = [];
-      const totalFiles = files.length;
+  try {
+    const uploadedItems = [];
+    const totalFiles = files.length;
 
-      for (let i = 0; i < totalFiles; i++) {
-        const file = files[i];
-        const isVideo = file.type.startsWith('video');
+    for (let i = 0; i < totalFiles; i++) {
+      const file = files[i];
+      const isVideo = file.type.startsWith('video');
 
-        // Upload directly from browser to Vercel's global Blob CDN via handleUploadUrl
-        const blobResult = await window.vercelBlobUpload(file.name, file, {
-          access: 'public',
-          handleUploadUrl: '/api/blob-upload',
-          onUploadProgress: (progress) => {
-            const filePercent = Math.round(progress.percentage);
+      // 1. Get signed client token from backend
+      const tokenRes = await fetch('/api/get-upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name })
+      });
+
+      if (!tokenRes.ok) {
+        // If Vercel Blob token is not configured or in local mode, fallback to server upload
+        throw new Error('FALLBACK_SERVER_UPLOAD');
+      }
+
+      const { uploadUrl, clientToken } = await tokenRes.json();
+
+      // 2. Direct PUT to Vercel Blob with progress
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl, true);
+        xhr.setRequestHeader('Authorization', `Bearer ${clientToken}`);
+        xhr.setRequestHeader('x-content-type', file.type || 'application/octet-stream');
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const filePercent = (e.loaded / e.total) * 100;
             const totalPercent = Math.round(((i + (filePercent / 100)) / totalFiles) * 100);
             updateUploadCardProgress(totalPercent);
           }
-        });
+        };
 
-        uploadedItems.push({
-          id: `media_${Date.now()}_${i}`,
-          filename: file.name,
-          originalName: file.name,
-          mimeType: file.type,
-          type: isVideo ? 'video' : 'photo',
-          size: file.size,
-          url: blobResult.url,
-          uploadedAt: new Date().toISOString()
-        });
-      }
-
-      // Save media metadata to MongoDB Atlas
-      const saveRes = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: uploadedItems })
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Vercel Blob returned ${xhr.status}: ${xhr.responseText}`));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error uploading directly to Vercel Blob'));
+        xhr.send(file);
       });
 
-      if (!saveRes.ok) {
-        throw new Error('Failed to save media metadata in database');
-      }
+      uploadedItems.push({
+        id: `media_${Date.now()}_${i}`,
+        filename: file.name,
+        originalName: file.name,
+        mimeType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
+        type: isVideo ? 'video' : 'photo',
+        size: file.size,
+        url: uploadUrl,
+        uploadedAt: new Date().toISOString()
+      });
+    }
 
-      uploadProgress = null;
-      allMedia.unshift(...uploadedItems);
-      render();
-      return;
-    } catch (err) {
+    // 3. Save media metadata to MongoDB Atlas
+    const saveRes = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: uploadedItems })
+    });
+
+    if (!saveRes.ok) {
+      throw new Error('Failed to save media metadata in database');
+    }
+
+    uploadProgress = null;
+    allMedia.unshift(...uploadedItems);
+    render();
+    return;
+  } catch (err) {
+    if (err.message !== 'FALLBACK_SERVER_UPLOAD') {
       console.error('Direct upload error:', err);
       uploadProgress = null;
       render();

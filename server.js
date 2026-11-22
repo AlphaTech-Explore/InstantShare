@@ -224,40 +224,36 @@ app.get('/api/room/:pin/media', async (req, res) => {
   res.json({ pin, media: room.media || [] });
 });
 
-// 4. Direct Client Upload Handler via official handleUpload
-app.all('/api/blob-upload', async (req, res) => {
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+// 4. Direct Client Upload Token Generator
+app.post('/api/get-upload-url', async (req, res) => {
   try {
-    const rawBody = req.body || {};
-    const jsonResponse = await handleUpload({
-      body: rawBody,
-      request: req,
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      onBeforeGenerateToken: async (pathname) => {
-        return {
-          allowedContentTypes: [
-            'image/jpeg',
-            'image/png',
-            'image/webp',
-            'image/gif',
-            'video/mp4',
-            'video/quicktime',
-            'video/webm',
-            'video/x-matroska'
-          ],
-          addRandomSuffix: true
-        };
-      },
-      onUploadCompleted: async ({ blob }) => {
-        console.log('Blob upload finished:', blob.url);
-      }
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN is not configured in environment variables' });
+    }
+    const { filename } = req.body || {};
+    const cleanName = filename ? filename.replace(/[^a-zA-Z0-9.-]/g, '_') : 'file';
+    const pathname = `rooms/${Date.now()}-${cleanName}`;
+
+    if (!generateClientTokenFromReadWriteToken) {
+      const blobClient = require('@vercel/blob/client');
+      generateClientTokenFromReadWriteToken = blobClient.generateClientTokenFromReadWriteToken;
+    }
+
+    const clientToken = await generateClientTokenFromReadWriteToken({
+      token,
+      pathname,
+      validUntil: Date.now() + 3600 * 1000 // 1 hour
     });
-    return res.status(200).json(jsonResponse);
-  } catch (error) {
-    console.error('Blob upload error:', error);
-    return res.status(400).json({ error: error.message });
+
+    return res.json({
+      uploadUrl: `https://blob.vercel-storage.com/${pathname}`,
+      clientToken,
+      pathname
+    });
+  } catch (err) {
+    console.error('get-upload-url error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
