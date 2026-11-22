@@ -230,8 +230,9 @@ app.all('/api/blob-upload', async (req, res) => {
     return res.status(200).end();
   }
   try {
+    const rawBody = req.body || {};
     const jsonResponse = await handleUpload({
-      body: req.body,
+      body: rawBody,
       request: req,
       token: process.env.BLOB_READ_WRITE_TOKEN,
       onBeforeGenerateToken: async (pathname) => {
