@@ -238,6 +238,10 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script type="module">
+    import { upload } from 'https://esm.sh/@vercel/blob/client';
+    window.vercelBlobUpload = upload;
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

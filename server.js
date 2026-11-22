@@ -7,12 +7,18 @@ const multer = require('multer');
 const { WebSocketServer, WebSocket } = require('ws');
 const os = require('os');
 const mongoose = require('mongoose');
-const cloudinary = require('cloudinary').v2;
+
+// Vercel Blob client upload handler
+let handleUpload = null;
+try {
+  const blobClient = require('@vercel/blob/client');
+  handleUpload = blobClient.handleUpload;
+} catch (e) {}
 
 const app = express();
 const server = http.createServer(app);
 
-// WebSockets (local/VPS, bypassed gracefully on Vercel Serverless)
+// WebSockets for local/VPS
 let wss = null;
 try {
   wss = new WebSocketServer({ server });
@@ -20,18 +26,6 @@ try {
 
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = !!process.env.VERCEL;
-
-// Cloudinary Configuration
-if (process.env.CLOUDINARY_URL || process.env.CLOUDINARY_CLOUD_NAME) {
-  if (process.env.CLOUDINARY_CLOUD_NAME) {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET
-    });
-  }
-  console.log('☁️ Cloudinary integration active for permanent photo/video hosting');
-}
 
 // MongoDB Room Schema
 const roomSchema = new mongoose.Schema({
@@ -45,8 +39,7 @@ const roomSchema = new mongoose.Schema({
       mimeType: String,
       type: String, // 'photo' or 'video'
       size: Number,
-      url: String, // Permanent Cloudinary CDN or local URL
-      public_id: String, // Cloudinary identifier for reliable deletion
+      url: String, // Permanent Vercel Blob CDN url
       uploadedAt: { type: String, default: () => new Date().toISOString() }
     }
   ]
@@ -54,16 +47,14 @@ const roomSchema = new mongoose.Schema({
 
 const Room = mongoose.models.Room || mongoose.model('Room', roomSchema);
 
-// MongoDB Connection with Auto-Reconnect for Serverless
+// MongoDB Connection with Serverless Cache
 let isConnected = false;
 async function connectDB() {
   if (isConnected || mongoose.connection.readyState === 1) {
     return true;
   }
   const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    return false; // Falls back to local memory if not yet configured
-  }
+  if (!uri) return false;
 
   try {
     await mongoose.connect(uri, {
@@ -79,10 +70,9 @@ async function connectDB() {
   }
 }
 
-// Local fallback store (for local testing before MongoDB env is added)
+// Local fallback store
 const localRooms = {};
 
-// Helper: Get room
 async function getRoom(pin) {
   const hasDB = await connectDB();
   if (hasDB) {
@@ -91,7 +81,6 @@ async function getRoom(pin) {
   return localRooms[pin] || null;
 }
 
-// Helper: Create room
 async function createRoom(pin) {
   const hasDB = await connectDB();
   if (hasDB) {
@@ -106,7 +95,6 @@ async function createRoom(pin) {
   }
 }
 
-// Helper: Add media
 async function addMediaToRoom(pin, items) {
   const hasDB = await connectDB();
   if (hasDB) {
@@ -123,7 +111,6 @@ async function addMediaToRoom(pin, items) {
   }
 }
 
-// Helper: Remove media
 async function removeMediaFromRoom(pin, mediaId) {
   const hasDB = await connectDB();
   if (hasDB) {
@@ -143,7 +130,7 @@ async function removeMediaFromRoom(pin, mediaId) {
   }
 }
 
-// Temporary directory for multer upload stream
+// Upload configuration for local fallback
 const UPLOADS_DIR = IS_VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
   try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
@@ -160,11 +147,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB per file
-  fileFilter: (req, file, cb) => {
-    if (/^(image|video)\//i.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Only photos and videos allowed!'), false);
-  }
+  limits: { fileSize: 100 * 1024 * 1024 }
 });
 
 // Middleware
@@ -205,7 +188,7 @@ app.get('/api/room/:pin/check', async (req, res) => {
   res.json({ exists: !!room, pin });
 });
 
-// 2. Create Room (Ensures PIN uniqueness forever in MongoDB)
+// 2. Create Room (Guaranteed permanent in MongoDB)
 app.post('/api/room/create', async (req, res) => {
   const { pin } = req.body;
   if (!pin || typeof pin !== 'string') {
@@ -237,7 +220,59 @@ app.get('/api/room/:pin/media', async (req, res) => {
   res.json({ pin, media: room.media || [] });
 });
 
-// 4. Upload media (Uploads to Cloudinary for permanent HTTPS delivery)
+// 4. Vercel Blob Direct Client Upload Handler
+// This allows the browser to bypass Vercel's 4.5MB limit and upload directly to Vercel Blob!
+app.post('/api/blob-upload', async (req, res) => {
+  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!blobToken || !handleUpload) {
+    return res.status(400).json({ error: 'Vercel Blob not configured' });
+  }
+
+  try {
+    const jsonResponse = await handleUpload({
+      body: req.body,
+      request: req,
+      onBeforeGenerateToken: async (pathname) => {
+        return {
+          allowedContentTypes: [
+            'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+            'video/mp4', 'video/webm', 'video/quicktime'
+          ],
+          addRandomSuffix: true
+        };
+      },
+      onUploadCompleted: async ({ blob }) => {
+        // Blob finished uploading directly from browser
+      }
+    });
+
+    res.json(jsonResponse);
+  } catch (err) {
+    console.error('Blob token generation error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 5. Save Uploaded Media Metadata to MongoDB
+app.post('/api/room/:pin/media-saved', async (req, res) => {
+  const pin = req.params.pin.trim();
+  const room = await getRoom(pin);
+  if (!room) {
+    return res.status(404).json({ error: 'Room does not exist' });
+  }
+
+  const { items } = req.body;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'No media items provided' });
+  }
+
+  await addMediaToRoom(pin, items);
+  broadcastToPin(pin, { type: 'NEW_MEDIA', items });
+
+  res.json({ success: true, count: items.length });
+});
+
+// 6. Fallback Upload Route (for local testing without Vercel Blob)
 app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) => {
   const pin = req.params.pin.trim();
   const room = await getRoom(pin);
@@ -249,45 +284,19 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) =>
     return res.status(400).json({ error: 'No media files received' });
   }
 
-  const isCloudinaryActive = !!(process.env.CLOUDINARY_URL || process.env.CLOUDINARY_CLOUD_NAME);
-  const newItems = [];
-
-  for (const file of req.files) {
+  const newItems = req.files.map(file => {
     const isVideo = file.mimetype.startsWith('video');
-    let fileUrl = `/uploads/${file.filename}`;
-    let publicId = null;
-
-    if (isCloudinaryActive) {
-      try {
-        const uploadRes = await cloudinary.uploader.upload(file.path, {
-          resource_type: isVideo ? 'video' : 'image',
-          folder: `alphabeta/rooms/${pin}`,
-          use_filename: true
-        });
-        fileUrl = uploadRes.secure_url;
-        publicId = uploadRes.public_id;
-
-        // Clean up temporary serverless file
-        if (fs.existsSync(file.path)) {
-          try { fs.unlinkSync(file.path); } catch (e) {}
-        }
-      } catch (err) {
-        console.error('Cloudinary upload error:', err);
-      }
-    }
-
-    newItems.push({
+    return {
       id: path.parse(file.filename).name,
       filename: file.filename,
       originalName: file.originalname,
       mimeType: file.mimetype,
       type: isVideo ? 'video' : 'photo',
       size: file.size,
-      url: fileUrl,
-      public_id: publicId,
+      url: `/uploads/${file.filename}`,
       uploadedAt: new Date().toISOString()
-    });
-  }
+    };
+  });
 
   await addMediaToRoom(pin, newItems);
   broadcastToPin(pin, { type: 'NEW_MEDIA', items: newItems });
@@ -295,7 +304,7 @@ app.post('/api/room/:pin/upload', upload.array('files', 20), async (req, res) =>
   res.json({ success: true, count: newItems.length, items: newItems });
 });
 
-// 5. Delete media
+// 7. Delete media
 app.delete('/api/room/:pin/media/:id', async (req, res) => {
   const pin = req.params.pin.trim();
   const { id } = req.params;
@@ -303,20 +312,6 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
   const removed = await removeMediaFromRoom(pin, id);
   if (!removed) {
     return res.status(404).json({ error: 'Media not found' });
-  }
-
-  // If stored in Cloudinary, delete from Cloudinary
-  if (removed.public_id) {
-    try {
-      await cloudinary.uploader.destroy(removed.public_id, {
-        resource_type: removed.type === 'video' ? 'video' : 'image'
-      });
-    } catch (e) {}
-  } else {
-    const localP = path.join(UPLOADS_DIR, removed.filename);
-    if (fs.existsSync(localP)) {
-      try { fs.unlinkSync(localP); } catch (e) {}
-    }
   }
 
   broadcastToPin(pin, { type: 'DELETE_MEDIA', id });

@@ -368,20 +368,69 @@ dropArea.addEventListener('drop', (e) => {
   handleFiles(dt.files);
 });
 
-function handleFiles(files) {
+async function handleFiles(files) {
   if (!currentPin) {
     alert('Please join or create a PIN room first!');
     return;
   }
   if (!files || files.length === 0) return;
 
+  uploadProgress = 0;
+  render();
+
+  // 1. Try Vercel Blob Direct Browser Upload (Bypasses Vercel 4.5MB limit, no signup required!)
+  if (window.vercelBlobUpload) {
+    try {
+      const uploadedItems = [];
+      const totalFiles = files.length;
+
+      for (let i = 0; i < totalFiles; i++) {
+        const file = files[i];
+        const isVideo = file.type.startsWith('video');
+
+        const blobResult = await window.vercelBlobUpload(file.name, file, {
+          access: 'public',
+          handleUploadUrl: '/api/blob-upload',
+          onUploadProgress: (progress) => {
+            const filePercent = Math.round(progress.percentage);
+            const totalPercent = Math.round(((i + (filePercent / 100)) / totalFiles) * 100);
+            updateUploadCardProgress(totalPercent);
+          }
+        });
+
+        uploadedItems.push({
+          id: `media_${Date.now()}_${i}`,
+          filename: file.name,
+          originalName: file.name,
+          mimeType: file.type,
+          type: isVideo ? 'video' : 'photo',
+          size: file.size,
+          url: blobResult.url,
+          uploadedAt: new Date().toISOString()
+        });
+      }
+
+      // Save media metadata to MongoDB Atlas
+      await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: uploadedItems })
+      });
+
+      uploadProgress = null;
+      allMedia.unshift(...uploadedItems);
+      render();
+      return;
+    } catch (err) {
+      console.warn('Vercel Blob direct upload error, falling back to server route:', err);
+    }
+  }
+
+  // 2. Server upload fallback (for local development)
   const formData = new FormData();
   for (let i = 0; i < files.length; i++) {
     formData.append('files', files[i]);
   }
-
-  uploadProgress = 0;
-  render();
 
   const xhr = new XMLHttpRequest();
   xhr.open('POST', `/api/room/${encodeURIComponent(currentPin)}/upload`, true);
