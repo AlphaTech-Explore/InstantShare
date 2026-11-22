@@ -229,14 +229,12 @@ function showPinGateway() {
 async function enterRoom(pin) {
   currentPin = pin;
 
-  // Update URL to make it shareable (?pin=...)
-  const url = new URL(window.location.href);
-  url.searchParams.set('pin', pin);
-  window.history.replaceState({}, '', url.toString());
+  // Keep URL clean: do NOT expose PIN in browser address bar (prevents auto-reconnect on refresh)
+  window.history.replaceState({}, '', window.location.pathname);
 
   // UI Updates
   headerPinDisplay.textContent = pin;
-  liveUrlText.textContent = `${window.location.host}/?pin=${pin}`;
+  liveUrlText.textContent = `${window.location.host} (PIN: ${pin})`;
   qrDisplayUrl.textContent = window.location.href;
 
   pinGateway.classList.add('hidden');
@@ -296,7 +294,7 @@ function initSocket() {
           const first = newItems[0];
           const isPhoto = first.type === 'photo';
           const randomUser = `user_${Math.floor(1000 + Math.random() * 9000)}`;
-          popToast(`<strong>${randomUser}</strong> just dropped a ${isPhoto ? 'photo' : 'video'}! ✨`);
+          popToast(`<strong>${randomUser}</strong> just dropped a ${isPhoto ? 'photo' : 'video'} in AlphaBeta! ✨`);
         } else if (data.type === 'DELETE_MEDIA') {
           allMedia = allMedia.filter(m => m.id !== data.id);
           render();
@@ -585,27 +583,12 @@ function formatBytes(bytes) {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-// Auto-check PIN in URL on initial page load ONLY if explicitly passed in URL query (e.g. ?pin=1234)
-async function checkUrlPin() {
-  const params = new URLSearchParams(window.location.search);
-  const pinFromUrl = params.get('pin');
-
-  if (pinFromUrl) {
-    try {
-      const res = await fetch(`/api/room/${encodeURIComponent(pinFromUrl)}/check`);
-      const data = await res.json();
-      if (data.exists) {
-        enterRoom(pinFromUrl);
-        return;
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-
-  // Force lockscreen by default
+// Always force the lockscreen PIN keypad every single time the page is opened or reloaded
+function startApp() {
+  // Wipe any residual PIN from memory / history
+  window.history.replaceState({}, '', window.location.pathname);
   showPinGateway();
 }
 
 initSocket();
-checkUrlPin();
+startApp();

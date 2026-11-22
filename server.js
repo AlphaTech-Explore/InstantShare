@@ -335,7 +335,7 @@ function getLocalIpAddresses() {
 if (!IS_VERCEL) {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n======================================================`);
-    console.log(`🚀 InstantShare Server is running!`);
+    console.log(`🚀 AlphaBeta Server is running!`);
     console.log(`💻 Local: http://localhost:${PORT}`);
     const ips = getLocalIpAddresses();
     if (ips.length > 0) {

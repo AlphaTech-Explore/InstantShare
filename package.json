@@ -1,7 +1,7 @@
 {
-  "name": "shareme",
+  "name": "alphabeta",
   "version": "2.0.0",
-  "description": "InstantShare - Real-time zero-auth media feed compatible with Vercel Blob and self-hosted environments",
+  "description": "AlphaBeta - Real-time zero-auth media feed with private PIN rooms",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
