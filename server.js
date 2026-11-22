@@ -225,13 +225,14 @@ app.get('/api/room/:pin/media', async (req, res) => {
 app.post('/api/blob-upload', async (req, res) => {
   const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
   if (!blobToken || !handleUpload) {
-    return res.status(400).json({ error: 'Vercel Blob not configured' });
+    return res.status(400).json({ error: 'BLOB_READ_WRITE_TOKEN is missing or @vercel/blob not installed' });
   }
 
   try {
     const jsonResponse = await handleUpload({
       body: req.body,
       request: req,
+      token: blobToken,
       onBeforeGenerateToken: async (pathname) => {
         return {
           allowedContentTypes: [

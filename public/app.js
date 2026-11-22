@@ -378,7 +378,7 @@ async function handleFiles(files) {
   uploadProgress = 0;
   render();
 
-  // 1. Try Vercel Blob Direct Browser Upload (Bypasses Vercel 4.5MB limit, no signup required!)
+  // 1. Try Vercel Blob Direct Browser Upload
   if (window.vercelBlobUpload) {
     try {
       const uploadedItems = [];
@@ -411,18 +411,26 @@ async function handleFiles(files) {
       }
 
       // Save media metadata to MongoDB Atlas
-      await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
+      const saveRes = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-saved`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: uploadedItems })
       });
+
+      if (!saveRes.ok) {
+        throw new Error('Failed to save media metadata in database');
+      }
 
       uploadProgress = null;
       allMedia.unshift(...uploadedItems);
       render();
       return;
     } catch (err) {
-      console.warn('Vercel Blob direct upload error, falling back to server route:', err);
+      console.error('Vercel Blob direct upload failed:', err);
+      uploadProgress = null;
+      render();
+      alert('Upload failed: ' + (err.message || 'Error uploading to Vercel Blob'));
+      return;
     }
   }
 
