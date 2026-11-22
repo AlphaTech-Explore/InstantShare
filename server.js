@@ -233,6 +233,7 @@ app.all('/api/blob-upload', async (req, res) => {
     const jsonResponse = await handleUpload({
       body: req.body,
       request: req,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
       onBeforeGenerateToken: async (pathname) => {
         return {
           allowedContentTypes: [
@@ -245,8 +246,7 @@ app.all('/api/blob-upload', async (req, res) => {
             'video/webm',
             'video/x-matroska'
           ],
-          addRandomSuffix: true,
-          token: process.env.BLOB_READ_WRITE_TOKEN
+          addRandomSuffix: true
         };
       },
       onUploadCompleted: async ({ blob }) => {

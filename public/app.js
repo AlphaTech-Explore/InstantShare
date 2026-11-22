@@ -273,6 +273,10 @@ function startLivePolling() {
 
 // ==================== WEBSOCKETS ====================
 function initSocket() {
+  // Vercel serverless does not support persistent WebSockets; use polling instead
+  if (window.location.hostname.includes('vercel.app')) {
+    return;
+  }
   try {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(`${protocol}//${window.location.host}`);
