@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AlphaBeta - Multi-Room Zero-Auth Media Stream</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Floating Toast Pill -->
+  <div class="toast-floating-pill hidden" id="liveToast">
+    <span class="sparkle">✨</span>
+    <span class="toast-text" id="toastMessage"><strong>user_3892</strong> just dropped a photo! • 5 people watching right now</span>
+  </div>
+
+  <!-- PIN GATEWAY (Adaptive: Beautiful card on PC & mobile) -->
+  <div class="pin-gateway-overlay" id="pinGateway">
+    <div class="pin-card-wrapper">
+      
+      <!-- Top Brand Header -->
+      <div class="gateway-brand">
+        <h1 class="brand-logo">AlphaBeta<span class="brand-sparkle">✨</span></h1>
+        <p class="gateway-subtitle" id="keypadPrompt">Enter your room PIN to connect</p>
+      </div>
+
+      <!-- Mode Selector: Join vs Create -->
+      <div class="pin-tabs">
+        <button class="pin-tab active" id="tabJoin">Join Room</button>
+        <button class="pin-tab" id="tabCreate">Create Room</button>
+      </div>
+
+      <!-- PIN Display Dots & Number Preview -->
+      <div class="lockscreen-display">
+        <div class="pin-dots-container" id="pinDots">
+          <span class="pin-dot"></span>
+          <span class="pin-dot"></span>
+          <span class="pin-dot"></span>
+          <span class="pin-dot"></span>
+        </div>
+        <div class="pin-number-preview" id="pinNumberPreview">_ _ _ _</div>
+      </div>
+
+      <!-- Error message bar -->
+      <div class="pin-error-msg" id="pinError"></div>
+
+      <!-- Built-in Numeric Keypad (Clean, responsive, never scrolls on PC) -->
+      <div class="keypad-grid" id="mobileKeypad">
+        <button type="button" class="keypad-btn" data-key="1">1</button>
+        <button type="button" class="keypad-btn" data-key="2">2</button>
+        <button type="button" class="keypad-btn" data-key="3">3</button>
+
+        <button type="button" class="keypad-btn" data-key="4">4</button>
+        <button type="button" class="keypad-btn" data-key="5">5</button>
+        <button type="button" class="keypad-btn" data-key="6">6</button>
+
+        <button type="button" class="keypad-btn" data-key="7">7</button>
+        <button type="button" class="keypad-btn" data-key="8">8</button>
+        <button type="button" class="keypad-btn" data-key="9">9</button>
+
+        <button type="button" class="keypad-btn action clear" id="btnKeypadClear">C</button>
+        <button type="button" class="keypad-btn" data-key="0">0</button>
+        <button type="button" class="keypad-btn action backspace" id="btnKeypadBackspace">⌫</button>
+      </div>
+
+      <!-- Enter / Submit Button -->
+      <button type="button" class="btn-gateway-action" id="btnSubmitPin">
+        <span id="btnSubmitLabel">Enter Room 🚀</span>
+      </button>
+
+      <div class="desktop-keyboard-hint">You can also use your keyboard numpad & Enter directly</div>
+    </div>
+  </div>
+
+  <!-- MAIN APP LAYOUT (Revealed once inside room) -->
+  <div class="app-layout" id="mainApp" style="display: none;">
+    
+    <!-- Top Nav Header -->
+    <header class="app-header">
+      <div class="brand-left">
+        <h1 class="brand-logo">AlphaBeta<span class="brand-sparkle">✨</span></h1>
+      </div>
+
+      <!-- Header actions on the right -->
+      <div class="header-right-group">
+        <!-- Switch PIN Pill -->
+        <button class="room-indicator-pill" id="btnSwitchRoom" type="button" title="Switch Room PIN">
+          <span class="pin-label-tag">PIN</span>
+          <span class="active-pin-number" id="headerPinDisplay">1111</span>
+          <span class="switch-icon">⇄</span>
+        </button>
+
+        <!-- Live Room Pill -->
+        <div class="live-room-pill">
+          <span class="live-dot"></span>
+          <span class="live-room-text"><strong>Live Room</strong> • <span id="onlineCount">1</span> online</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Upload Drop Card -->
+    <section class="upload-section">
+      <div class="upload-card" id="dropArea">
+        <input type="file" id="filePicker" accept="image/*,video/*" multiple hidden />
+        
+        <!-- Whimsical Doodles / Stickers Left -->
+        <div class="doodle-cluster left">
+          <svg class="doodle-art" viewBox="0 0 100 80" fill="none">
+            <g transform="rotate(8 55 35)">
+              <rect x="35" y="5" width="45" height="40" rx="5" fill="#FFF2D6" stroke="#2B2D42" stroke-width="2.5" />
+              <circle cx="48" cy="18" r="4" fill="#F4A261" stroke="#2B2D42" stroke-width="1.5"/>
+              <path d="M40 38 L52 26 L65 38 Z" fill="#F4A261" stroke="#2B2D42" stroke-width="2"/>
+            </g>
+            <g transform="rotate(-10 35 45)">
+              <rect x="12" y="18" width="45" height="40" rx="5" fill="#FCE4EC" stroke="#2B2D42" stroke-width="2.5" />
+              <path d="M18 48 L28 34 L40 48 Z" fill="#E8B4B8" stroke="#2B2D42" stroke-width="2"/>
+              <circle cx="25" cy="28" r="4" fill="#A8DADC" stroke="#2B2D42" stroke-width="1.5"/>
+            </g>
+            <path d="M8 26 C4 29 4 33 6 36" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+            <path d="M6 22 C3 25 3 27 4 30" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+            <g transform="translate(42, 60)">
+              <circle cx="8" cy="8" r="8" fill="#FDE293" stroke="#2B2D42" stroke-width="1.8"/>
+              <circle cx="6" cy="7" r="1.2" fill="#2B2D42"/>
+              <circle cx="10" cy="7" r="1.2" fill="#2B2D42"/>
+              <path d="M5 10 Q8 13 11 10" stroke="#2B2D42" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            </g>
+          </svg>
+        </div>
+
+        <!-- Whimsical Doodles / Stickers Right -->
+        <div class="doodle-cluster right">
+          <svg class="doodle-art" viewBox="0 0 100 80" fill="none">
+            <g transform="rotate(-8 30 25)">
+              <rect x="10" y="8" width="38" height="32" rx="6" fill="#FFD1C1" stroke="#2B2D42" stroke-width="2.5"/>
+              <path d="M24 20 L32 25 L24 30 Z" fill="#E76F51" stroke="#2B2D42" stroke-width="1.5"/>
+              <line x1="10" y1="14" x2="48" y2="14" stroke="#2B2D42" stroke-width="1.8"/>
+            </g>
+            <g transform="rotate(12 65 30)">
+              <rect x="45" y="14" width="36" height="30" rx="6" fill="#D7C9F3" stroke="#2B2D42" stroke-width="2.5"/>
+              <path d="M58 24 L65 29 L58 34 Z" fill="#9D4EDD" stroke="#2B2D42" stroke-width="1.5"/>
+            </g>
+            <g transform="rotate(-6 55 58)">
+              <rect x="38" y="44" width="34" height="28" rx="6" fill="#FFEAA7" stroke="#2B2D42" stroke-width="2.5"/>
+              <path d="M51 53 L58 58 L51 63 Z" fill="#F39C12" stroke="#2B2D42" stroke-width="1.5"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="upload-action-center">
+          <button class="btn-choose" id="btnChooseFiles" type="button">
+            <span class="plus-icon">+</span> Choose Photos & Videos
+          </button>
+          <p class="drop-hint" id="dropHintText">or drag & drop files here (Max 100MB)</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Share Link Bar with Hand-drawn annotations -->
+    <div class="share-bar-container">
+      <svg class="hand-arrow left-arrow" viewBox="0 0 60 40" fill="none">
+        <path d="M5 25 C15 35, 35 30, 48 8" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+        <path d="M12 20 L4 26 L10 32" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+
+      <div class="share-bar">
+        <div class="share-url-group">
+          <span class="share-label">Live Link:</span>
+          <span class="share-url-text" id="liveUrlText">instantshare.vercel.app/?pin=1111</span>
+        </div>
+        <div class="share-btn-group">
+          <button class="share-action-btn" id="btnCopy">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            <span id="btnCopyLabel">Copy Link</span>
+          </button>
+          <button class="share-action-btn" id="btnShowQr">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+            <span>Show QR</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="hand-note right-note">
+        <span class="hand-text">No login, just share this!</span>
+        <svg class="curved-pointer" viewBox="0 0 70 30" fill="none">
+          <path d="M60 4 C50 16, 25 24, 8 16" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+          <path d="M16 12 L7 17 L12 24" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Feed Title -->
+    <div class="feed-header">
+      <h2>Live Stream & Media Feed</h2>
+    </div>
+
+    <!-- Empty room notice (if no files) -->
+    <div class="room-empty-state" id="emptyNotice" style="display: none;">
+      <div class="empty-doodle">📂</div>
+      <h3>This room is fresh & empty!</h3>
+      <p>Drop a photo or video above and anyone joining with this PIN will instantly see it stream.</p>
+    </div>
+
+    <!-- Media Grid -->
+    <section class="media-grid" id="mediaGrid">
+      <!-- Media items injected dynamically with pastel borders -->
+    </section>
+  </div>
+
+  <!-- Fullscreen Modal View for Photos & Videos -->
+  <div class="modal-backdrop" id="viewModal">
+    <div class="modal-card">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <div class="modal-media-wrapper" id="modalMedia"></div>
+      <div class="modal-bottom-bar">
+        <div class="modal-title-box">
+          <h4 id="modalName">Sunset Photo</h4>
+          <span id="modalMeta">Just Now • 8 views</span>
+        </div>
+        <a id="modalRawBtn" class="share-action-btn" target="_blank">Open Full Size</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Code Modal Popup -->
+  <div class="modal-backdrop" id="qrModal">
+    <div class="modal-card qr-card-content">
+      <button class="modal-close" id="qrClose">&times;</button>
+      <h3>Scan to Open on Mobile</h3>
+      <p>Scan with your phone camera to open this exact PIN room directly with no login.</p>
+      <div class="qr-canvas-holder">
+        <canvas id="qrCanvas"></canvas>
+      </div>
+      <div class="qr-url-pill" id="qrDisplayUrl">http://...</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
