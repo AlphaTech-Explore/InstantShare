@@ -186,6 +186,26 @@ function broadcastPinStats(pin) {
 
 // ==================== REST APIS ====================
 
+// Debug DB Connection
+app.get('/api/debug-db', async (req, res) => {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    return res.json({ connected: false, reason: 'MONGODB_URI is not set in environment' });
+  }
+  try {
+    const ok = await connectDB();
+    const count = ok ? await Room.countDocuments() : 0;
+    const room2011 = ok ? await Room.findOne({ pin: '2011' }) : null;
+    return res.json({
+      connected: ok,
+      totalRooms: count,
+      room2011: room2011 ? { pin: room2011.pin, mediaCount: room2011.media.length } : null
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // 1. Check PIN Status
 app.get('/api/room/:pin/check', async (req, res) => {
   const pin = req.params.pin.trim();
