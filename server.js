@@ -48,7 +48,11 @@ const roomSchema = new mongoose.Schema({
   ]
 });
 
-const Room = mongoose.models.Room || mongoose.model('Room', roomSchema);
+// Clear existing compiled model to avoid schema mismatch
+if (mongoose.models.Room) {
+  delete mongoose.models.Room;
+}
+const Room = mongoose.model('Room', roomSchema);
 
 // MongoDB Connection with Serverless Cache
 let isConnected = false;
