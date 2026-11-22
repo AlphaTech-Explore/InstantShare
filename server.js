@@ -222,31 +222,35 @@ app.get('/api/room/:pin/media', async (req, res) => {
   res.json({ pin, media: room.media || [] });
 });
 
-// 4. Direct Client Upload Token Generator
-// Reliable endpoint to mint a short-lived client upload token for the browser
-app.post('/api/get-blob-token', async (req, res) => {
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!blobToken) {
-    return res.status(400).json({ error: 'BLOB_READ_WRITE_TOKEN is not set in Vercel project environment variables.' });
-  }
-
-  const { filename } = req.body || {};
-  const pathname = filename ? `rooms/${Date.now()}-${filename}` : `rooms/${Date.now()}`;
-
+// 4. Direct Client Upload Handler via official handleUpload
+app.post('/api/blob-upload', async (req, res) => {
   try {
-    if (generateClientTokenFromReadWriteToken) {
-      const clientToken = await generateClientTokenFromReadWriteToken({
-        token: blobToken,
-        pathname,
-        validUntil: Date.now() + 60 * 60 * 1000 // 1 hour
-      });
-      return res.json({ clientToken, pathname });
-    } else {
-      return res.status(500).json({ error: 'SDK function generateClientTokenFromReadWriteToken unavailable' });
-    }
-  } catch (err) {
-    console.error('Failed to generate client token:', err);
-    return res.status(500).json({ error: err.message });
+    const jsonResponse = await handleUpload({
+      body: req.body,
+      request: req,
+      onBeforeGenerateToken: async (pathname) => {
+        return {
+          allowedContentTypes: [
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'image/gif',
+            'video/mp4',
+            'video/quicktime',
+            'video/webm',
+            'video/x-matroska'
+          ],
+          addRandomSuffix: true
+        };
+      },
+      onUploadCompleted: async ({ blob }) => {
+        console.log('Blob upload finished:', blob.url);
+      }
+    });
+    return res.status(200).json(jsonResponse);
+  } catch (error) {
+    console.error('Blob upload error:', error);
+    return res.status(400).json({ error: error.message });
   }
 });
 
