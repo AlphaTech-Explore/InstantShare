@@ -52,6 +52,11 @@ const qrClose = document.getElementById('qrClose');
 const qrCanvas = document.getElementById('qrCanvas');
 const qrDisplayUrl = document.getElementById('qrDisplayUrl');
 
+// Storage Progress DOM
+const storageSummaryText = document.getElementById('storageSummaryText');
+const storageRemainingText = document.getElementById('storageRemainingText');
+const storageFill = document.getElementById('storageFill');
+
 const PASTEL_BORDERS = [
   '#FFD2C2', // Peach
   '#E4D8F8', // Lavender
@@ -262,6 +267,9 @@ async function enterRoom(pin) {
 
   // Load Room Media for this specific room
   await loadRoomMedia();
+
+  // Load Global Storage usage stats
+  loadStorageStats();
 
   // Start backup polling (essential for Vercel serverless live sync!)
   startLivePolling();
@@ -513,6 +521,7 @@ async function handleFiles(files) {
     // Guard: only add to current feed if user is still in the room where upload started
     allMedia.unshift(...uploadedItems);
     render();
+    loadStorageStats(); // Refresh global storage bar after upload
     return;
   } catch (err) {
     if (err.message !== 'FALLBACK_SERVER_UPLOAD') {
@@ -722,6 +731,7 @@ window.deleteMedia = async function(id, event) {
     if (res.ok) {
       allMedia = allMedia.filter(m => m.id !== id);
       render();
+      loadStorageStats(); // Refresh storage stats after deletion
     }
   } catch (err) {
     console.error('Delete error:', err);
@@ -812,6 +822,32 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+// ==================== STORAGE STATS ====================
+async function loadStorageStats() {
+  try {
+    const res = await fetch('/api/storage-stats');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (storageSummaryText) {
+      storageSummaryText.textContent = `${formatBytes(data.usedBytes)} used of ${formatBytes(data.totalLimitBytes)}`;
+    }
+    if (storageRemainingText) {
+      storageRemainingText.textContent = `${formatBytes(data.remainingBytes)} remaining`;
+    }
+    if (storageFill) {
+      const pct = Math.max(0.5, Math.min(100, data.usedPercentage));
+      storageFill.style.width = `${pct}%`;
+      if (pct > 85) {
+        storageFill.style.background = 'linear-gradient(90deg, #F59E0B, #EF4444)';
+      } else {
+        storageFill.style.background = 'linear-gradient(90deg, #10B981, #3B82F6)';
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load storage stats:', err);
+  }
 }
 
 // Always force the lockscreen PIN keypad every single time the page is opened or reloaded

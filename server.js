@@ -259,6 +259,58 @@ app.get('/api/debug-db', async (req, res) => {
   }
 });
 
+// Storage Usage API (Total for all rooms vs Cloudinary Free Tier Limit 25GB)
+const TOTAL_STORAGE_LIMIT_BYTES = 25 * 1024 * 1024 * 1024; // 25 GB free tier
+
+app.get('/api/storage-stats', async (req, res) => {
+  try {
+    const hasDB = await connectDB();
+    let totalBytesUsed = 0;
+    let totalFilesCount = 0;
+    let totalRoomsCount = 0;
+
+    if (hasDB) {
+      const rooms = await Room.find({}, { media: 1 }).lean();
+      totalRoomsCount = rooms.length;
+      rooms.forEach(r => {
+        if (Array.isArray(r.media)) {
+          r.media.forEach(m => {
+            totalFilesCount++;
+            totalBytesUsed += Number(m.size || 0);
+          });
+        }
+      });
+    } else {
+      const roomKeys = Object.keys(localRooms);
+      totalRoomsCount = roomKeys.length;
+      roomKeys.forEach(k => {
+        const r = localRooms[k];
+        if (Array.isArray(r.media)) {
+          r.media.forEach(m => {
+            totalFilesCount++;
+            totalBytesUsed += Number(m.size || 0);
+          });
+        }
+      });
+    }
+
+    const remainingBytes = Math.max(0, TOTAL_STORAGE_LIMIT_BYTES - totalBytesUsed);
+    const usedPercentage = Math.min(100, (totalBytesUsed / TOTAL_STORAGE_LIMIT_BYTES) * 100);
+
+    return res.json({
+      totalLimitBytes: TOTAL_STORAGE_LIMIT_BYTES,
+      usedBytes: totalBytesUsed,
+      remainingBytes,
+      usedPercentage: parseFloat(usedPercentage.toFixed(2)),
+      totalFiles: totalFilesCount,
+      totalRooms: totalRoomsCount
+    });
+  } catch (err) {
+    console.error('Storage stats error:', err);
+    return res.status(500).json({ error: 'Failed to calculate storage stats' });
+  }
+});
+
 // 1. Check PIN Status
 app.get('/api/room/:pin/check', async (req, res) => {
   const pin = req.params.pin.trim();
