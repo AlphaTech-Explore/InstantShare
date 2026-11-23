@@ -320,6 +320,18 @@ function initSocket() {
         } else if (data.type === 'DELETE_MEDIA') {
           allMedia = allMedia.filter(m => m.id !== data.id);
           render();
+        } else if (data.type === 'PIN_MEDIA') {
+          const item = allMedia.find(m => m.id === data.id);
+          if (item) {
+            item.pinned = data.pinned;
+            render();
+          }
+        } else if (data.type === 'LIKE_MEDIA') {
+          const item = allMedia.find(m => m.id === data.id);
+          if (item) {
+            item.likes = data.likes;
+            render();
+          }
         } else if (data.type === 'ROOM_STATS') {
           if (data.onlineCount !== undefined) {
             onlineCount.textContent = data.onlineCount;
@@ -583,14 +595,19 @@ function render() {
     emptyNotice.style.display = 'none';
   }
 
-  allMedia.forEach((item, index) => {
+  // Sort pinned items to the very top, preserving upload order otherwise
+  const sortedMedia = [...allMedia].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+
+  sortedMedia.forEach((item, index) => {
     const borderColor = PASTEL_BORDERS[index % PASTEL_BORDERS.length];
     const isVideo = item.type === 'video';
     const originalName = item.originalName || 'Untitled Media';
-    const views = (index * 3 + 4) % 15 + 2;
+    const isPinned = !!item.pinned;
+    const likesCount = item.likes || 0;
+    const isLiked = localStorage.getItem(`liked_${item.id}`) === 'true';
 
     html += `
-      <div class="card-item" style="--border-theme: ${borderColor};">
+      <div class="card-item ${isPinned ? 'is-pinned' : ''}" style="--border-theme: ${borderColor};">
         <div class="card-media-box" onclick="openModal('${item.id}')">
           ${isVideo ? `
             <video class="card-video" src="${item.url}#t=0.1" preload="metadata" muted playsinline></video>
@@ -607,12 +624,28 @@ function render() {
             <img class="card-img" src="${item.url}" alt="${originalName}" loading="lazy" />
           `}
 
-          <button class="btn-card-trash" onclick="deleteMedia('${item.id}', event)" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
+          <!-- Top Action Buttons (Pin & Trash) -->
+          <div class="card-top-actions">
+            <button class="btn-card-pin ${isPinned ? 'active' : ''}" onclick="togglePinMedia('${item.id}', event)" title="${isPinned ? 'Unpin' : 'Pin to Top'}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="${isPinned ? '#F59E0B' : 'none'}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="17" x2="12" y2="22"></line>
+                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+              </svg>
+            </button>
+
+            <button class="btn-card-trash" onclick="deleteMedia('${item.id}', event)" title="Delete">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
+
+          ${isPinned ? `
+            <div class="pinned-badge">
+              <span>📌 Pinned</span>
+            </div>
+          ` : ''}
         </div>
 
         <div class="card-bottom-info">
@@ -622,10 +655,14 @@ function render() {
             </span>
             <span>Anonymous</span>
           </div>
-          <div class="views-count">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-            <span>${views} views</span>
-          </div>
+
+          <!-- Like / Favorite Button (Replaces Views Count) -->
+          <button class="btn-like-pill ${isLiked ? 'liked' : ''}" onclick="likeMedia('${item.id}', event)" title="Favorite / Like">
+            <svg class="heart-icon" width="14" height="14" viewBox="0 0 24 24" fill="${isLiked ? '#EF4444' : 'none'}" stroke="${isLiked ? '#EF4444' : 'currentColor'}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path>
+            </svg>
+            <span class="likes-count">${likesCount > 0 ? likesCount : 'Like'}</span>
+          </button>
         </div>
       </div>
     `;
@@ -633,6 +670,55 @@ function render() {
 
   mediaGrid.innerHTML = html;
 }
+
+// Like / Favorite media
+window.likeMedia = async function(id, event) {
+  event.stopPropagation();
+  if (!currentPin) return;
+
+  const item = allMedia.find(m => m.id === id);
+  if (!item) return;
+
+  // Optimistic UI update
+  item.likes = (item.likes || 0) + 1;
+  localStorage.setItem(`liked_${id}`, 'true');
+  render();
+
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media/${id}/like`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      item.likes = data.likes;
+      render();
+    }
+  } catch (err) {
+    console.error('Like error:', err);
+  }
+};
+
+// Pin / Unpin media to top
+window.togglePinMedia = async function(id, event) {
+  event.stopPropagation();
+  if (!currentPin) return;
+
+  const item = allMedia.find(m => m.id === id);
+  if (!item) return;
+
+  // Optimistic toggle
+  item.pinned = !item.pinned;
+  render();
+
+  try {
+    const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media/${id}/pin`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      item.pinned = data.pinned;
+      render();
+    }
+  } catch (err) {
+    console.error('Pin error:', err);
+  }
+};
 
 // Delete media
 window.deleteMedia = async function(id, event) {

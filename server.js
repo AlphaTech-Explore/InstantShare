@@ -138,6 +138,54 @@ async function removeMediaFromRoom(pin, mediaId) {
   }
 }
 
+async function togglePinMediaInRoom(pin, mediaId) {
+  const hasDB = await connectDB();
+  if (hasDB) {
+    const room = await Room.findOne({ pin });
+    if (!room) return null;
+    const item = room.media.find(m => m.id === mediaId);
+    if (!item) return null;
+
+    const newPinned = !item.pinned;
+    await Room.updateOne(
+      { pin, 'media.id': mediaId },
+      { $set: { 'media.$.pinned': newPinned } }
+    );
+    item.pinned = newPinned;
+    return item;
+  } else {
+    if (!localRooms[pin] || !localRooms[pin].media) return null;
+    const item = localRooms[pin].media.find(m => m.id === mediaId);
+    if (!item) return null;
+    item.pinned = !item.pinned;
+    return item;
+  }
+}
+
+async function toggleLikeMediaInRoom(pin, mediaId) {
+  const hasDB = await connectDB();
+  if (hasDB) {
+    const room = await Room.findOne({ pin });
+    if (!room) return null;
+    const item = room.media.find(m => m.id === mediaId);
+    if (!item) return null;
+
+    const newLikes = (item.likes || 0) + 1;
+    await Room.updateOne(
+      { pin, 'media.id': mediaId },
+      { $set: { 'media.$.likes': newLikes } }
+    );
+    item.likes = newLikes;
+    return item;
+  } else {
+    if (!localRooms[pin] || !localRooms[pin].media) return null;
+    const item = localRooms[pin].media.find(m => m.id === mediaId);
+    if (!item) return null;
+    item.likes = (item.likes || 0) + 1;
+    return item;
+  }
+}
+
 // Upload configuration for local fallback
 const UPLOADS_DIR = IS_VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -378,6 +426,34 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
 
   broadcastToPin(pin, { type: 'DELETE_MEDIA', id });
   res.json({ success: true, removedPermanently: true });
+});
+
+// 8. Toggle Pin on Media (Puts favorite at top of feed)
+app.post('/api/room/:pin/media/:id/pin', async (req, res) => {
+  const pin = req.params.pin.trim();
+  const { id } = req.params;
+
+  const item = await togglePinMediaInRoom(pin, id);
+  if (!item) {
+    return res.status(404).json({ error: 'Media not found' });
+  }
+
+  broadcastToPin(pin, { type: 'PIN_MEDIA', id, pinned: item.pinned });
+  res.json({ success: true, pinned: item.pinned });
+});
+
+// 9. Like Media
+app.post('/api/room/:pin/media/:id/like', async (req, res) => {
+  const pin = req.params.pin.trim();
+  const { id } = req.params;
+
+  const item = await toggleLikeMediaInRoom(pin, id);
+  if (!item) {
+    return res.status(404).json({ error: 'Media not found' });
+  }
+
+  broadcastToPin(pin, { type: 'LIKE_MEDIA', id, likes: item.likes });
+  res.json({ success: true, likes: item.likes });
 });
 
 // WebSocket Server (local and VPS)
