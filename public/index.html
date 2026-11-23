@@ -206,20 +206,21 @@
     <!-- Global Storage Usage Footer Pill Bar -->
     <footer class="storage-footer" id="storageFooter">
       <div class="storage-footer-card">
-        <div class="storage-info-row">
-          <div class="storage-text-left">
-            <div class="storage-title-group">
-              <span class="storage-icon">☁️</span>
-              <span class="storage-title">Total Cloud Storage</span>
-            </div>
-            <span class="storage-sub" id="storageSummaryText">0 B used of 25 GB</span>
+        <div class="storage-card-header">
+          <div class="storage-brand-label">
+            <span class="storage-icon">☁️</span>
+            <span class="storage-title">Total Cloud Storage</span>
           </div>
-          <div class="storage-text-right">
-            <span class="storage-remaining-badge" id="storageRemainingText">25 GB remaining</span>
-          </div>
+          <div class="storage-remaining-badge" id="storageRemainingText">25 GB remaining</div>
         </div>
+
         <div class="storage-track">
           <div class="storage-fill" id="storageFill" style="width: 0%;"></div>
+        </div>
+
+        <div class="storage-card-subline">
+          <span class="storage-sub-prefix">Account Usage:</span>
+          <span class="storage-sub-val" id="storageSummaryText">0 B used of 25 GB</span>
         </div>
       </div>
     </footer>
