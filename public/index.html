@@ -17,14 +17,14 @@
     <span class="toast-text" id="toastMessage"><strong>user_3892</strong> just dropped a photo! • 5 people watching right now</span>
   </div>
 
-  <!-- PIN GATEWAY (Adaptive: Beautiful card on PC & mobile) -->
+  <!-- ROOM NUMBER GATEWAY (Adaptive: Beautiful card on PC & mobile) -->
   <div class="pin-gateway-overlay" id="pinGateway">
     <div class="pin-card-wrapper">
       
       <!-- Top Brand Header -->
       <div class="gateway-brand">
         <h1 class="brand-logo">AlphaBeta<span class="brand-sparkle">✨</span></h1>
-        <p class="gateway-subtitle" id="keypadPrompt">Enter your room PIN to connect</p>
+        <p class="gateway-subtitle" id="keypadPrompt">Enter your Room No. to connect</p>
       </div>
 
       <!-- Mode Selector: Join vs Create -->
@@ -33,7 +33,7 @@
         <button class="pin-tab" id="tabCreate">Create Room</button>
       </div>
 
-      <!-- PIN Display Dots & Number Preview -->
+      <!-- Room Number Display Dots & Number Preview -->
       <div class="lockscreen-display">
         <div class="pin-dots-container" id="pinDots">
           <span class="pin-dot"></span>
@@ -86,9 +86,9 @@
 
       <!-- Header actions on the right -->
       <div class="header-right-group">
-        <!-- Switch PIN Pill -->
-        <button class="room-indicator-pill" id="btnSwitchRoom" type="button" title="Switch Room PIN">
-          <span class="pin-label-tag">PIN</span>
+        <!-- Switch Room Pill -->
+        <button class="room-indicator-pill" id="btnSwitchRoom" type="button" title="Switch Room No.">
+          <span class="pin-label-tag">ROOM</span>
           <span class="active-pin-number" id="headerPinDisplay">1111</span>
           <span class="switch-icon">⇄</span>
         </button>
@@ -168,7 +168,7 @@
       <div class="share-bar">
         <div class="share-url-group">
           <span class="share-label">Live Link:</span>
-          <span class="share-url-text" id="liveUrlText">instantshare.vercel.app/?pin=1111</span>
+          <span class="share-url-text" id="liveUrlText">instantshare.vercel.app/?room=1111</span>
         </div>
         <div class="share-btn-group">
           <button class="share-action-btn" id="btnCopy">
@@ -200,7 +200,7 @@
     <div class="room-empty-state" id="emptyNotice" style="display: none;">
       <div class="empty-doodle">📂</div>
       <h3>This room is fresh & empty!</h3>
-      <p>Drop a photo or video above and anyone joining with this PIN will instantly see it stream.</p>
+      <p>Drop a photo or video above and anyone joining this Room No. will instantly see it stream.</p>
     </div>
 
     <!-- Media Grid -->
@@ -229,7 +229,7 @@
     <div class="modal-card qr-card-content">
       <button class="modal-close" id="qrClose">&times;</button>
       <h3>Scan to Open on Mobile</h3>
-      <p>Scan with your phone camera to open this exact PIN room directly with no login.</p>
+      <p>Scan with your phone camera to open this Room No. directly with no login.</p>
       <div class="qr-canvas-holder">
         <canvas id="qrCanvas"></canvas>
       </div>

@@ -145,7 +145,7 @@ tabJoin.addEventListener('click', () => {
   isCreateMode = false;
   tabJoin.classList.add('active');
   tabCreate.classList.remove('active');
-  keypadPrompt.textContent = 'Enter your room PIN to connect';
+  keypadPrompt.textContent = 'Enter your Room No. to connect';
   btnSubmitLabel.textContent = 'Enter Room 🚀';
   clearError();
 });
@@ -154,18 +154,18 @@ tabCreate.addEventListener('click', () => {
   isCreateMode = true;
   tabCreate.classList.add('active');
   tabJoin.classList.remove('active');
-  keypadPrompt.textContent = 'Choose a unique PIN for your new room';
+  keypadPrompt.textContent = 'Choose a unique Room No. for your new room';
   btnSubmitLabel.textContent = 'Create Room ✨';
   clearError();
 });
 
-// Submit PIN Action
+// Submit Room No. Action
 btnSubmitPin.addEventListener('click', handlePinSubmit);
 
 async function handlePinSubmit() {
   const pin = currentEnteredPin.trim();
   if (!pin || pin.length < 3) {
-    showError('PIN must be at least 3 digits.');
+    showError('Room No. must be at least 3 digits.');
     return;
   }
 
@@ -197,7 +197,7 @@ async function handlePinSubmit() {
       btnSubmitPin.disabled = false;
 
       if (!data.exists) {
-        showError(`Room PIN "${pin}" doesn't exist yet! Switch to "Create Room" to start it.`);
+        showError(`Room No. "${pin}" doesn't exist yet! Switch to "Create Room" to start it.`);
         return;
       }
       enterRoom(pin);
@@ -213,28 +213,43 @@ btnSwitchRoom.addEventListener('click', showPinGateway);
 
 function showPinGateway() {
   localStorage.removeItem('active_room_pin');
+  currentPin = null;
+  allMedia = []; // Immediately wipe media state so no other room's files can ever be seen
   currentEnteredPin = "";
   updateKeypadDisplay();
   clearError();
+  render(); // Immediately clear feed UI
+
   pinGateway.classList.remove('hidden');
   mainApp.style.display = 'none';
   window.history.replaceState({}, '', window.location.pathname);
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: 'JOIN_PIN', pin: null }));
   }
-  if (pollTimer) clearInterval(pollTimer);
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 }
 
-// Enter Room with PIN
+// Enter Room with Room No.
 async function enterRoom(pin) {
-  currentPin = pin;
+  // Stop existing polling immediately
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
 
-  // Keep URL clean: do NOT expose PIN in browser address bar (prevents auto-reconnect on refresh)
+  currentPin = pin;
+  allMedia = []; // Instantly clear memory of any prior room before entering new room
+  render(); // Instantly show clean/empty feed, never previous room's files
+
+  // Keep URL clean: do NOT expose room number in browser address bar (prevents auto-reconnect on refresh)
   window.history.replaceState({}, '', window.location.pathname);
 
   // UI Updates
   headerPinDisplay.textContent = pin;
-  liveUrlText.textContent = `${window.location.host} (PIN: ${pin})`;
+  liveUrlText.textContent = `${window.location.host} (Room: ${pin})`;
   qrDisplayUrl.textContent = window.location.href;
 
   pinGateway.classList.add('hidden');
@@ -245,7 +260,7 @@ async function enterRoom(pin) {
     socket.send(JSON.stringify({ type: 'JOIN_PIN', pin }));
   }
 
-  // Load Room Media
+  // Load Room Media for this specific room
   await loadRoomMedia();
 
   // Start backup polling (essential for Vercel serverless live sync!)
@@ -255,12 +270,15 @@ async function enterRoom(pin) {
 // Backup live polling for Vercel
 function startLivePolling() {
   if (pollTimer) clearInterval(pollTimer);
+  const activePin = currentPin;
   pollTimer = setInterval(async () => {
-    if (!currentPin) return;
+    if (!currentPin || currentPin !== activePin) return;
     try {
-      const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media`);
+      const res = await fetch(`/api/room/${encodeURIComponent(activePin)}/media`);
       if (res.ok) {
         const data = await res.json();
+        // Guard against race conditions if user switched rooms while request was in-flight
+        if (currentPin !== activePin) return;
         const incoming = data.media || [];
         if (incoming.length !== allMedia.length) {
           allMedia = incoming;
@@ -324,15 +342,14 @@ function initSocket() {
 // ==================== LOAD MEDIA FOR ROOM ====================
 async function loadRoomMedia() {
   if (!currentPin) return;
+  const requestedPin = currentPin;
   try {
-    const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media`);
+    const res = await fetch(`/api/room/${encodeURIComponent(requestedPin)}/media`);
     if (res.ok) {
       const data = await res.json();
-      const serverMedia = data.media || [];
-      // Merge server media with current media without losing just-uploaded items
-      const serverIds = new Set(serverMedia.map(m => m.id));
-      const localOnly = allMedia.filter(m => !serverIds.has(m.id));
-      allMedia = [...localOnly, ...serverMedia];
+      // Ensure the user hasn't switched rooms while fetch was pending
+      if (currentPin !== requestedPin) return;
+      allMedia = data.media || [];
       render();
     }
   } catch (err) {
@@ -481,6 +498,7 @@ async function handleFiles(files) {
     }
 
     uploadProgress = null;
+    // Guard: only add to current feed if user is still in the room where upload started
     allMedia.unshift(...uploadedItems);
     render();
     return;
