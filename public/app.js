@@ -761,15 +761,33 @@ viewModal.addEventListener('click', (e) => {
 
 // Share & QR
 btnCopy.addEventListener('click', () => {
-  navigator.clipboard.writeText(window.location.href);
+  const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(currentPin || '')}`;
+  navigator.clipboard.writeText(shareUrl);
   btnCopyLabel.textContent = 'Copied!';
   setTimeout(() => (btnCopyLabel.textContent = 'Copy Link'), 2000);
 });
 
 btnShowQr.addEventListener('click', () => {
+  const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(currentPin || '')}`;
+  qrDisplayUrl.textContent = shareUrl;
+
+  // Clear previous QR
+  qrCanvas.innerHTML = '';
+
   if (window.QRCode) {
-    QRCode.toCanvas(qrCanvas, window.location.href, { width: 190, margin: 1 });
+    new QRCode(qrCanvas, {
+      text: shareUrl,
+      width: 180,
+      height: 180,
+      colorDark: '#2B2D42',
+      colorLight: '#FFFFFF',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } else {
+    // Fallback QR image
+    qrCanvas.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(shareUrl)}" alt="QR Code" style="display:block;" />`;
   }
+
   qrModal.classList.add('active');
 });
 

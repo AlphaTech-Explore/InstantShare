@@ -160,11 +160,6 @@
 
     <!-- Share Link Bar with Hand-drawn annotations -->
     <div class="share-bar-container">
-      <svg class="hand-arrow left-arrow" viewBox="0 0 60 40" fill="none">
-        <path d="M5 25 C15 35, 35 30, 48 8" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
-        <path d="M12 20 L4 26 L10 32" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-
       <div class="share-bar">
         <div class="share-url-group">
           <span class="share-label">Live Link:</span>
@@ -231,13 +226,13 @@
       <h3>Scan to Open on Mobile</h3>
       <p>Scan with your phone camera to open this Room No. directly with no login.</p>
       <div class="qr-canvas-holder">
-        <canvas id="qrCanvas"></canvas>
+        <div id="qrCanvas"></div>
       </div>
       <div class="qr-url-pill" id="qrDisplayUrl">http://...</div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
