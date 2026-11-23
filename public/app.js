@@ -623,29 +623,6 @@ function render() {
           ` : `
             <img class="card-img" src="${item.url}" alt="${originalName}" loading="lazy" />
           `}
-
-          <!-- Top Action Buttons (Pin & Trash) -->
-          <div class="card-top-actions">
-            <button class="btn-card-pin ${isPinned ? 'active' : ''}" onclick="togglePinMedia('${item.id}', event)" title="${isPinned ? 'Unpin' : 'Pin to Top'}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="${isPinned ? '#F59E0B' : 'none'}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="12" y1="17" x2="12" y2="22"></line>
-                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
-              </svg>
-            </button>
-
-            <button class="btn-card-trash" onclick="deleteMedia('${item.id}', event)" title="Delete">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-            </button>
-          </div>
-
-          ${isPinned ? `
-            <div class="pinned-badge">
-              <span>📌 Pinned</span>
-            </div>
-          ` : ''}
         </div>
 
         <div class="card-bottom-info">
@@ -656,13 +633,22 @@ function render() {
             <span>Anonymous</span>
           </div>
 
-          <!-- Like / Favorite Button (Replaces Views Count) -->
-          <button class="btn-like-pill ${isLiked ? 'liked' : ''}" onclick="likeMedia('${item.id}', event)" title="Favorite / Like">
-            <svg class="heart-icon" width="14" height="14" viewBox="0 0 24 24" fill="${isLiked ? '#EF4444' : 'none'}" stroke="${isLiked ? '#EF4444' : 'currentColor'}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path>
-            </svg>
-            <span class="likes-count">${likesCount > 0 ? likesCount : 'Like'}</span>
-          </button>
+          <!-- Bottom Action Buttons: Pin & Delete (Replaces Like) -->
+          <div class="card-bottom-actions">
+            <button class="btn-card-action pin-btn ${isPinned ? 'active' : ''}" onclick="togglePinMedia('${item.id}', event)" title="${isPinned ? 'Unpin' : 'Pin to Top'}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="${isPinned ? '#F59E0B' : 'none'}" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="17" x2="12" y2="22"></line>
+                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
+              </svg>
+            </button>
+
+            <button class="btn-card-action trash-btn" onclick="deleteMedia('${item.id}', event)" title="Delete Permanently">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -720,10 +706,16 @@ window.togglePinMedia = async function(id, event) {
   }
 };
 
-// Delete media
+// Delete media with confirmation
 window.deleteMedia = async function(id, event) {
   event.stopPropagation();
   if (!currentPin) return;
+
+  const item = allMedia.find(m => m.id === id);
+  const name = item ? item.originalName : 'this media';
+
+  const confirmed = window.confirm(`Are you sure you want to permanently delete "${name}"?`);
+  if (!confirmed) return;
 
   try {
     const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media/${id}`, { method: 'DELETE' });
@@ -732,7 +724,7 @@ window.deleteMedia = async function(id, event) {
       render();
     }
   } catch (err) {
-    console.error(err);
+    console.error('Delete error:', err);
   }
 };
 
