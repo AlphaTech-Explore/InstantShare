@@ -728,10 +728,17 @@ window.deleteMedia = async function(id, event) {
 
   try {
     const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media/${id}`, { method: 'DELETE' });
+    const data = await res.json();
     if (res.ok) {
       allMedia = allMedia.filter(m => m.id !== id);
       render();
       loadStorageStats(); // Refresh storage stats after deletion
+      
+      if (data.missingCloudinaryKeys) {
+        console.warn('File deleted from database, but Cloudinary API credentials (CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET) are missing in Vercel environment variables.');
+      } else if (data.cloudinaryResult && data.cloudinaryResult.result === 'ok') {
+        console.log('File deleted permanently from both Database and Cloudinary!');
+      }
     }
   } catch (err) {
     console.error('Delete error:', err);
@@ -842,7 +849,7 @@ async function loadStorageStats() {
       if (pct > 85) {
         storageFill.style.background = 'linear-gradient(90deg, #F59E0B, #EF4444)';
       } else {
-        storageFill.style.background = 'linear-gradient(90deg, #10B981, #3B82F6)';
+        storageFill.style.background = 'linear-gradient(90deg, #F4A261, #E76F51)';
       }
     }
   } catch (err) {

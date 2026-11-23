@@ -239,24 +239,26 @@ function broadcastPinStats(pin) {
 
 // ==================== REST APIS ====================
 
-// Debug DB Connection
-app.get('/api/debug-db', async (req, res) => {
+// Debug DB & Cloudinary Configuration
+app.get('/api/debug-config', async (req, res) => {
   const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    return res.json({ connected: false, reason: 'MONGODB_URI is not set in environment' });
-  }
-  try {
-    const ok = await connectDB();
-    const count = ok ? await Room.countDocuments() : 0;
-    const room2011 = ok ? await Room.findOne({ pin: '2011' }).lean() : null;
-    return res.json({
-      connected: ok,
-      totalRooms: count,
-      room2011: room2011 ? { pin: room2011.pin, mediaCount: room2011.media.length, media: room2011.media } : null
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message, stack: err.stack });
-  }
+  const hasDB = await connectDB();
+  const hasCloudinaryKey = !!process.env.CLOUDINARY_API_KEY;
+  const hasCloudinarySecret = !!process.env.CLOUDINARY_API_SECRET;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'diubhg6ri';
+  
+  return res.json({
+    database: {
+      connected: hasDB,
+      hasUri: !!uri
+    },
+    cloudinary: {
+      cloudName,
+      hasApiKey: hasCloudinaryKey,
+      hasApiSecret: hasCloudinarySecret,
+      deletionReady: hasCloudinaryKey && hasCloudinarySecret
+    }
+  });
 });
 
 // Storage Usage API (Total for all rooms vs Cloudinary Free Tier Limit 25GB)
@@ -465,19 +467,44 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
     return res.status(404).json({ error: 'Media not found' });
   }
 
-  // Permanently delete from Cloudinary
-  if (removed.publicId && cloudinary && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+  let cloudinaryResult = null;
+  let cloudinaryError = null;
+
+  // Check if Cloudinary credentials are configured
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'diubhg6ri';
+
+  if (!apiKey || !apiSecret) {
+    cloudinaryError = 'Missing CLOUDINARY_API_KEY or CLOUDINARY_API_SECRET in Vercel environment variables';
+    console.warn(`[Cloudinary Warning] Cannot delete asset ${removed.publicId}: ${cloudinaryError}`);
+  } else if (removed.publicId && cloudinary) {
     try {
+      cloudinary.config({
+        cloud_name: cloudName,
+        api_key: apiKey,
+        api_secret: apiSecret
+      });
       const resourceType = removed.type === 'video' ? 'video' : 'image';
-      await cloudinary.uploader.destroy(removed.publicId, { resource_type: resourceType });
-      console.log(`Permanently destroyed from Cloudinary: ${removed.publicId}`);
+      cloudinaryResult = await cloudinary.uploader.destroy(removed.publicId, {
+        resource_type: resourceType,
+        invalidate: true
+      });
+      console.log(`[Cloudinary Success] Destroyed ${removed.publicId} (${resourceType}):`, cloudinaryResult);
     } catch (cErr) {
-      console.error('Cloudinary destroy error:', cErr.message);
+      cloudinaryError = cErr.message;
+      console.error(`[Cloudinary Error] Failed to destroy ${removed.publicId}:`, cErr);
     }
   }
 
   broadcastToPin(pin, { type: 'DELETE_MEDIA', id });
-  res.json({ success: true, removedPermanently: true });
+  res.json({
+    success: true,
+    removedPermanently: !!cloudinaryResult && cloudinaryResult.result === 'ok',
+    cloudinaryResult,
+    cloudinaryError,
+    missingCloudinaryKeys: !apiKey || !apiSecret
+  });
 });
 
 // 8. Toggle Pin on Media (Puts favorite at top of feed)
