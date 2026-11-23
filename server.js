@@ -261,11 +261,47 @@ app.get('/api/debug-config', async (req, res) => {
   });
 });
 
-// Storage Usage API (Total for all rooms vs Cloudinary Free Tier Limit 25GB)
+// Storage Usage API (Queries Cloudinary Usage API directly when credentials exist, with DB fallback)
 const TOTAL_STORAGE_LIMIT_BYTES = 25 * 1024 * 1024 * 1024; // 25 GB free tier
 
 app.get('/api/storage-stats', async (req, res) => {
   try {
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'diubhg6ri';
+
+    // 1. If Cloudinary credentials are provided, fetch live account usage from Cloudinary Admin API
+    if (apiKey && apiSecret && cloudinary) {
+      try {
+        cloudinary.config({
+          cloud_name: cloudName,
+          api_key: apiKey,
+          api_secret: apiSecret
+        });
+
+        const usageData = await cloudinary.api.usage();
+        console.log('[Cloudinary Usage API] Live usage response:', usageData?.storage);
+
+        // usageData.storage typically contains { usage: bytes, limit: bytes, used_percent: float }
+        const usedBytes = usageData?.storage?.usage || 0;
+        const totalLimitBytes = usageData?.storage?.limit || TOTAL_STORAGE_LIMIT_BYTES;
+        const remainingBytes = Math.max(0, totalLimitBytes - usedBytes);
+        const usedPercentage = usageData?.storage?.used_percent || ((usedBytes / totalLimitBytes) * 100);
+
+        return res.json({
+          source: 'cloudinary',
+          totalLimitBytes,
+          usedBytes,
+          remainingBytes,
+          usedPercentage: parseFloat(Number(usedPercentage).toFixed(2)),
+          credits: usageData?.credits || null
+        });
+      } catch (cErr) {
+        console.warn('[Cloudinary Usage API Error] Falling back to database sum:', cErr.message);
+      }
+    }
+
+    // 2. Fallback: Calculate from MongoDB Atlas or local memory
     const hasDB = await connectDB();
     let totalBytesUsed = 0;
     let totalFilesCount = 0;
@@ -300,6 +336,7 @@ app.get('/api/storage-stats', async (req, res) => {
     const usedPercentage = Math.min(100, (totalBytesUsed / TOTAL_STORAGE_LIMIT_BYTES) * 100);
 
     return res.json({
+      source: 'database',
       totalLimitBytes: TOTAL_STORAGE_LIMIT_BYTES,
       usedBytes: totalBytesUsed,
       remainingBytes,

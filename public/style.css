@@ -1138,6 +1138,60 @@ body {
     white-space: normal;
     text-align: center;
   }
+
+  /* Storage Footer Card Mobile Responsive */
+  .storage-footer {
+    margin-top: 2.2rem;
+    padding-bottom: 2rem;
+  }
+
+  .storage-footer-card {
+    padding: 1rem 1.1rem;
+    border-radius: 20px;
+    box-shadow: 0 6px 0 var(--card-peach);
+  }
+
+  .storage-info-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .storage-text-left {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 0.4rem;
+  }
+
+  .storage-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .storage-title {
+    font-size: 0.88rem;
+  }
+
+  .storage-sub {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+    margin-left: auto;
+  }
+
+  .storage-text-right {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .storage-remaining-badge {
+    font-size: 0.76rem;
+    padding: 0.25rem 0.65rem;
+  }
 }
 
 @media (max-width: 440px) {
@@ -1187,6 +1241,12 @@ body {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.storage-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .storage-icon {
