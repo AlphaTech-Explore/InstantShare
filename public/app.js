@@ -438,7 +438,7 @@ async function handleFiles(files) {
     // Upload files concurrently in parallel (up to 4 at a time)
     const uploadSingleFile = async (file, index) => {
       const fileMime = file.type || '';
-      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || '');
+      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi|3gp|m4v)$/i.test(file.name || '');
       const resourceType = isVideo ? 'video' : 'image';
 
       const formData = new FormData();
@@ -481,14 +481,27 @@ async function handleFiles(files) {
         xhr.send(formData);
       });
 
+      // Construct MP4 delivery URL and JPG thumbnail URL for videos
+      let mediaUrl = cloudinaryRes.secure_url || cloudinaryRes.url;
+      let thumbnailUrl = null;
+
+      if (isVideo && cloudinaryRes.public_id) {
+        // Enforce MP4 delivery format in Cloudinary so all browsers & mobile devices can play it smoothly
+        mediaUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${cloudinaryRes.public_id}.mp4`;
+        // Generate high quality video poster frame snapshot at second 1
+        thumbnailUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${cloudinaryRes.public_id}.jpg`;
+      }
+
       return {
         id: `media_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`,
         filename: file.name,
         originalName: file.name,
-        mimeType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
+        mimeType: isVideo ? 'video/mp4' : (file.type || 'image/jpeg'),
         type: isVideo ? 'video' : 'photo',
         size: file.size,
-        url: cloudinaryRes.secure_url || cloudinaryRes.url,
+        url: mediaUrl,
+        rawUrl: cloudinaryRes.secure_url || cloudinaryRes.url,
+        thumbnailUrl: thumbnailUrl,
         publicId: cloudinaryRes.public_id,
         uploadedAt: new Date().toISOString()
       };
@@ -616,16 +629,30 @@ function render() {
   const sortedMedia = displayMedia.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   sortedMedia.forEach((item, index) => {
-    const isVideo = item.type === 'video';
+    const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video'));
     const originalName = item.originalName || 'Untitled Media';
     const isPinned = !!item.pinned;
+
+    // Resolve robust MP4 streaming URL and thumbnail poster
+    let videoStreamUrl = item.url;
+    let posterUrl = item.thumbnailUrl;
+
+    if (isVideo && item.publicId) {
+      videoStreamUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
+      if (!posterUrl) {
+        posterUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${item.publicId}.jpg`;
+      }
+    } else if (isVideo && item.url && !item.url.endsWith('.mp4')) {
+      // If Cloudinary URL has .3gp or other extension, transform to .mp4
+      videoStreamUrl = item.url.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
+    }
 
     // Cinematic modern masonry card with frosted dark gradient overlay
     html += `
       <div class="card-item ${isPinned ? 'is-pinned' : ''} ${isVideo ? 'item-video' : 'item-photo'}" onclick="openModal('${item.id}')">
         <div class="card-media-box">
           ${isVideo ? `
-            <video class="card-video" src="${item.url}#t=0.1" preload="metadata" muted playsinline></video>
+            <video class="card-video" src="${videoStreamUrl}#t=0.1" ${posterUrl ? `poster="${posterUrl}"` : ''} preload="metadata" muted playsinline></video>
             <div class="card-overlay-play">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
             </div>
@@ -754,16 +781,24 @@ window.openModal = function(id) {
   const item = allMedia.find(m => m.id === id);
   if (!item) return;
 
+  const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video'));
+  let mediaUrl = item.url;
+  if (isVideo && item.publicId) {
+    mediaUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
+  } else if (isVideo && item.url && !item.url.endsWith('.mp4')) {
+    mediaUrl = item.url.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
+  }
+
   modalName.textContent = item.originalName;
   modalMeta.textContent = `Uploaded Just Now • ${formatBytes(item.size)}`;
-  modalRawBtn.href = item.downloadUrl || item.url;
+  modalRawBtn.href = mediaUrl;
 
-  if (item.type === 'video') {
+  if (isVideo) {
     modalMedia.innerHTML = `
-      <video src="${item.url}" controls autoplay playsinline style="max-height: 72vh; width: 100%;"></video>
+      <video src="${mediaUrl}" controls autoplay playsinline style="max-height: 75vh; width: 100%; border-radius: 12px; background: #000;"></video>
     `;
   } else {
-    modalMedia.innerHTML = `<img src="${item.url}" alt="${item.originalName}" />`;
+    modalMedia.innerHTML = `<img src="${item.url}" alt="${item.originalName}" style="max-height: 75vh; width: 100%; object-fit: contain;" />`;
   }
 
   viewModal.classList.add('active');
