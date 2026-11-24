@@ -328,59 +328,10 @@ body {
 }
 
 .brand-sparkle {
-  font-size: 1.1rem;
+  font-size: 1.35rem;
   font-style: normal;
-  color: #D97706;
+  color: #FBBF24;
   margin-left: 2px;
-}
-
-/* Cinematic Nav Tabs */
-.nav-tabs-group {
-  display: flex;
-  align-items: center;
-  gap: 1.6rem;
-}
-
-.nav-tab {
-  background: transparent;
-  border: none;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #64748B;
-  cursor: pointer;
-  padding: 0.35rem 0.1rem;
-  position: relative;
-  transition: all 0.15s ease;
-}
-
-.nav-tab:hover {
-  color: var(--text-dark);
-}
-
-.nav-tab.active {
-  color: var(--text-dark);
-  font-weight: 800;
-}
-
-.nav-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 2.5px;
-  background: var(--text-dark);
-  border-radius: 9999px;
-}
-
-@media (max-width: 768px) {
-  .nav-tabs-group {
-    order: 3;
-    width: 100%;
-    justify-content: center;
-    gap: 1.2rem;
-    margin-top: 0.6rem;
-  }
 }
 
 .header-right-group {
@@ -715,309 +666,181 @@ body {
   font-size: 0.92rem;
 }
 
-/* ================== Media Grid View Modes ================== */
-
-/* 1. Cinematic View (Default: 5-column sleek masonry with dark glass highlights) */
-.media-grid,
-.media-grid.mode-cinematic {
-  column-count: 5;
-  column-gap: 1.1rem;
+/* ================== Media Grid ================== */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.3rem;
   width: 100%;
-}
-
-/* 2. Masonry View (Denser, fluid multi-column waterfall with vibrant hover) */
-.media-grid.mode-masonry {
-  column-count: 6;
-  column-gap: 0.9rem;
-  width: 100%;
-}
-
-.media-grid.mode-masonry .card-item {
-  margin-bottom: 0.9rem;
-  border-radius: 14px;
-}
-
-/* 3. Fullscreen View (Large immersive showcase cards) */
-.media-grid.mode-fullscreen {
-  column-count: 2;
-  column-gap: 1.5rem;
-  max-width: 1000px;
-  margin: 0 auto;
-}
-
-.media-grid.mode-fullscreen .card-item {
-  margin-bottom: 1.5rem;
-  border-radius: 24px;
-}
-
-.media-grid.mode-fullscreen .card-video {
-  min-height: 280px;
-}
-
-.media-grid.mode-fullscreen .card-overlay-play {
-  width: 64px;
-  height: 64px;
-}
-
-.media-grid.mode-fullscreen .card-overlay-play svg {
-  width: 30px;
-  height: 30px;
 }
 
 .card-item {
-  break-inside: avoid;
-  page-break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  margin-bottom: 1.1rem;
-  background: #11141D;
-  border-radius: 18px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  display: inline-block;
-  width: 100%;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  background: #FFFFFF;
+  border-radius: 20px;
+  padding: 8px;
+  border: 3.5px solid var(--border-theme, var(--card-peach));
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
   position: relative;
-  overflow: hidden;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
-  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(35, 39, 51, 0.05);
 }
 
 .card-item:hover {
-  transform: translateY(-4px) scale(1.01);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(35, 39, 51, 0.1);
 }
 
 .card-media-box {
   width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  background: #11141D;
   position: relative;
   overflow: hidden;
-  display: block;
-  background: #151821;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .card-img {
   width: 100%;
-  height: auto;
-  display: block;
+  height: 100%;
   object-fit: cover;
-  transition: transform 0.35s ease;
 }
 
 .card-video {
   width: 100%;
-  height: auto;
-  min-height: 140px;
-  display: block;
+  height: 100%;
   object-fit: cover;
-  background: #000000;
 }
 
-.card-item:hover .card-img {
-  transform: scale(1.03);
+.video-duration-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  color: #FFFFFF;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
-/* Cinematic Centered Play Button */
+.live-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 58px;
+  background: #FFF7ED;
+  color: #C2410C;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
 .card-overlay-play {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 48px;
-  height: 48px;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.85);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #FFFFFF;
-  transition: all 0.25s ease;
-  z-index: 2;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  transition: transform 0.2s ease;
 }
 
 .card-item:hover .card-overlay-play {
-  transform: translate(-50%, -50%) scale(1.12);
-  background: rgba(0, 0, 0, 0.7);
-  border-color: rgba(255, 255, 255, 0.8);
+  transform: scale(1.1);
+  background: #FFFFFF;
 }
 
 .card-overlay-play svg {
   margin-left: 2px;
+  color: #1F2430;
 }
 
-/* Floating Top-Right Actions (Pin & Delete) */
-.card-top-actions {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+/* Bottom action buttons (Pin & Trash) */
+.card-bottom-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  opacity: 0;
-  transform: translateY(-4px);
-  transition: all 0.2s ease;
-  z-index: 3;
-}
-
-.card-item:hover .card-top-actions,
-.card-item.is-pinned .card-top-actions {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-@media (max-width: 768px) {
-  .card-top-actions {
-    opacity: 0.95;
-    transform: none;
-  }
+  gap: 5px;
 }
 
 .btn-card-action {
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 10px;
-  width: 30px;
-  height: 30px;
+  background: #F8FAFC;
+  border: 1.2px solid #E2E8F0;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: #FFFFFF;
+  color: #64748B;
   transition: all 0.15s ease;
 }
 
 .btn-card-action.pin-btn:hover {
-  background: rgba(245, 158, 11, 0.85);
+  background: #FEF3C7;
+  color: #D97706;
   border-color: #FCD34D;
-  color: #FFFFFF;
+  transform: translateY(-1px);
 }
 
 .btn-card-action.pin-btn.active {
-  background: rgba(245, 158, 11, 0.85);
-  border-color: #FCD34D;
-  color: #FFFFFF;
+  background: #FEF3C7;
+  color: #D97706;
+  border-color: #F59E0B;
 }
 
 .btn-card-action.trash-btn:hover {
-  background: rgba(239, 68, 68, 0.85);
-  border-color: #FCA5A5;
-  color: #FFFFFF;
+  background: #FEE2E2;
+  color: #DC2626;
+  border-color: #F87171;
+  transform: translateY(-1px);
 }
 
 .card-item.is-pinned {
-  border: 2px solid #F59E0B;
-  box-shadow: 0 0 16px rgba(245, 158, 11, 0.28);
+  border-width: 4px;
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.22);
 }
 
-/* Bottom Cinematic Overlay Footer */
-.card-cinematic-footer {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 1.8rem 0.85rem 0.75rem;
-  background: linear-gradient(180deg, transparent 0%, rgba(10, 12, 18, 0.55) 45%, rgba(10, 12, 18, 0.88) 100%);
+.card-bottom-info {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #FFFFFF;
-  font-size: 0.76rem;
+  padding: 0.55rem 0.3rem 0.2rem;
+  font-size: 0.82rem;
+  color: #475569;
   font-weight: 600;
-  z-index: 2;
-  pointer-events: none;
 }
 
-.cinematic-user-pill, .cinematic-stats-pill {
+.user-tag {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  padding: 0.22rem 0.55rem;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
-.cinematic-avatar {
+.avatar-circle {
+  width: 17px;
+  height: 17px;
+  background: #CBD5E1;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.cinematic-stats-pill {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-/* Responsive Column Adjustments per View Mode */
-@media (max-width: 1200px) {
-  .media-grid,
-  .media-grid.mode-cinematic {
-    column-count: 4;
-    column-gap: 1rem;
-  }
-  .media-grid.mode-masonry {
-    column-count: 5;
-    column-gap: 0.85rem;
-  }
-  .media-grid.mode-fullscreen {
-    column-count: 2;
-    column-gap: 1.2rem;
-  }
-}
-
-@media (max-width: 900px) {
-  .media-grid,
-  .media-grid.mode-cinematic {
-    column-count: 3;
-    column-gap: 0.85rem;
-  }
-  .media-grid.mode-masonry {
-    column-count: 4;
-    column-gap: 0.75rem;
-  }
-  .media-grid.mode-fullscreen {
-    column-count: 1;
-    max-width: 600px;
-  }
-}
-
-@media (max-width: 640px) {
-  .media-grid,
-  .media-grid.mode-cinematic {
-    column-count: 2;
-    column-gap: 0.7rem;
-  }
-  .media-grid.mode-masonry {
-    column-count: 2;
-    column-gap: 0.55rem;
-  }
-  .media-grid.mode-fullscreen {
-    column-count: 1;
-    width: 100%;
-  }
-
-  .card-item {
-    border-radius: 14px;
-    margin-bottom: 0.7rem;
-  }
-
-  .card-overlay-play {
-    width: 38px;
-    height: 38px;
-  }
-
-  .cinematic-user-pill, .cinematic-stats-pill {
-    padding: 0.18rem 0.45rem;
-    font-size: 0.7rem;
-  }
 }
 
 /* Upload Progress Card */
@@ -1296,7 +1119,17 @@ body {
     font-size: 1.15rem;
   }
 
-  /* Media Grid on Mobile handled by masonry columns */
+  /* Media Grid on Mobile */
+  .media-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .card-item {
+    border-width: 2.8px;
+    border-radius: 16px;
+    padding: 6px;
+  }
 
   .toast-floating-pill {
     width: 92%;
@@ -1347,6 +1180,12 @@ body {
     align-items: center;
     justify-content: space-between;
     font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 440px) {
+  .media-grid {
+    grid-template-columns: 1fr;
   }
 }
 

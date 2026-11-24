@@ -438,7 +438,7 @@ async function handleFiles(files) {
     // Upload files concurrently in parallel (up to 4 at a time)
     const uploadSingleFile = async (file, index) => {
       const fileMime = file.type || '';
-      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi|3gp|m4v)$/i.test(file.name || '');
+      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || '');
       const resourceType = isVideo ? 'video' : 'image';
 
       const formData = new FormData();
@@ -481,27 +481,14 @@ async function handleFiles(files) {
         xhr.send(formData);
       });
 
-      // Construct MP4 delivery URL and JPG thumbnail URL for videos
-      let mediaUrl = cloudinaryRes.secure_url || cloudinaryRes.url;
-      let thumbnailUrl = null;
-
-      if (isVideo && cloudinaryRes.public_id) {
-        // Enforce MP4 delivery format in Cloudinary so all browsers & mobile devices can play it smoothly
-        mediaUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${cloudinaryRes.public_id}.mp4`;
-        // Generate high quality video poster frame snapshot at second 1
-        thumbnailUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${cloudinaryRes.public_id}.jpg`;
-      }
-
       return {
         id: `media_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`,
         filename: file.name,
         originalName: file.name,
-        mimeType: isVideo ? 'video/mp4' : (file.type || 'image/jpeg'),
+        mimeType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
         type: isVideo ? 'video' : 'photo',
         size: file.size,
-        url: mediaUrl,
-        rawUrl: cloudinaryRes.secure_url || cloudinaryRes.url,
-        thumbnailUrl: thumbnailUrl,
+        url: cloudinaryRes.secure_url || cloudinaryRes.url,
         publicId: cloudinaryRes.public_id,
         uploadedAt: new Date().toISOString()
       };
@@ -591,64 +578,9 @@ function updateUploadCardProgress(percent) {
   if (label) label.textContent = `Uploading... ${percent}%`;
 }
 
-let currentViewMode = 'cinematic'; // 'cinematic' | 'fullscreen' | 'masonry'
-
-function isVideoItem(item) {
-  if (!item) return false;
-  if (item.type === 'video') return true;
-  if (item.mimeType && item.mimeType.startsWith('video')) return true;
-  const testUrl = (item.url || item.originalName || '').toLowerCase();
-  return /\.(mp4|3gp|mov|webm|avi|mkv|m4v)(\?.*)?$/i.test(testUrl);
-}
-
-function getOptimizedVideoUrls(item) {
-  let streamUrl = item.url || '';
-  let posterUrl = item.thumbnailUrl || '';
-
-  if (item.publicId) {
-    streamUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
-    if (!posterUrl) {
-      posterUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${item.publicId}.jpg`;
-    }
-  } else if (streamUrl.includes('/video/upload/')) {
-    if (!streamUrl.includes('f_mp4')) {
-      streamUrl = streamUrl.replace('/video/upload/', '/video/upload/f_mp4,vc_h264/');
-    }
-    streamUrl = streamUrl.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
-    if (!posterUrl) {
-      posterUrl = streamUrl.replace('/f_mp4,vc_h264/', '/so_1.0,w_600,c_limit,q_auto,f_jpg/').replace(/\.mp4(\?.*)?$/i, '.jpg$1');
-    }
-  }
-
-  return { streamUrl, posterUrl };
-}
-
-// Setup View Mode Tab listeners
-function initViewTabs() {
-  const tabs = document.querySelectorAll('.nav-tab');
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      currentViewMode = tab.getAttribute('data-view') || 'cinematic';
-      
-      const grid = document.getElementById('mediaGrid');
-      if (grid) {
-        grid.className = `media-grid mode-${currentViewMode}`;
-      }
-      render();
-    });
-  });
-}
-
 // ==================== RENDER FEED ====================
 function render() {
   let html = '';
-
-  const grid = document.getElementById('mediaGrid');
-  if (grid) {
-    grid.className = `media-grid mode-${currentViewMode}`;
-  }
 
   if (uploadProgress !== null) {
     const isMobile = window.innerWidth <= 768;
@@ -672,55 +604,76 @@ function render() {
     emptyNotice.style.display = 'none';
   }
 
-  // All uploaded media is included in every view mode
+  // Sort pinned items to the very top, preserving upload order otherwise
   const sortedMedia = [...allMedia].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   sortedMedia.forEach((item, index) => {
-    const isVideo = isVideoItem(item);
-    const originalName = item.originalName || (isVideo ? 'Video' : 'Photo');
+    const borderColor = PASTEL_BORDERS[index % PASTEL_BORDERS.length];
+    const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video')) || /\.(mp4|3gp|mov|webm|avi|mkv)(\?.*)?$/i.test(item.url || '');
+    const originalName = item.originalName || 'Untitled Media';
     const isPinned = !!item.pinned;
-    const { streamUrl, posterUrl } = isVideo ? getOptimizedVideoUrls(item) : { streamUrl: '', posterUrl: '' };
+    const likesCount = item.likes || 0;
+    const isLiked = localStorage.getItem(`liked_${item.id}`) === 'true';
+
+    // Transcode / stream as MP4 from Cloudinary so all browsers & mobile play properly
+    let videoStreamUrl = item.url;
+    let posterUrl = item.thumbnailUrl;
+    if (isVideo) {
+      if (item.publicId) {
+        videoStreamUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
+        if (!posterUrl) {
+          posterUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${item.publicId}.jpg`;
+        }
+      } else if (videoStreamUrl && videoStreamUrl.includes('/video/upload/')) {
+        if (!videoStreamUrl.includes('f_mp4')) {
+          videoStreamUrl = videoStreamUrl.replace('/video/upload/', '/video/upload/f_mp4,vc_h264/');
+        }
+        videoStreamUrl = videoStreamUrl.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
+        if (!posterUrl) {
+          posterUrl = videoStreamUrl.replace('/f_mp4,vc_h264/', '/so_1.0,w_600,c_limit,q_auto,f_jpg/').replace(/\.mp4(\?.*)?$/i, '.jpg$1');
+        }
+      }
+    }
 
     html += `
-      <div class="card-item ${isPinned ? 'is-pinned' : ''} ${isVideo ? 'item-video' : 'item-photo'}" onclick="openModal('${item.id}')">
-        <div class="card-media-box">
+      <div class="card-item ${isPinned ? 'is-pinned' : ''}" style="--border-theme: ${borderColor};">
+        <div class="card-media-box" onclick="openModal('${item.id}')">
           ${isVideo ? `
-            <video class="card-video" src="${streamUrl}#t=0.1" ${posterUrl ? `poster="${posterUrl}"` : ''} preload="metadata" muted playsinline></video>
+            <video class="card-video" src="${videoStreamUrl}#t=0.1" ${posterUrl ? `poster="${posterUrl}"` : ''} preload="metadata" muted playsinline></video>
             <div class="card-overlay-play">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            </div>
+            <div class="video-duration-badge">
+              <span>▶ Video</span>
             </div>
           ` : `
             <img class="card-img" src="${item.url}" alt="${originalName}" loading="lazy" />
           `}
+        </div>
 
-          <!-- Top-right Floating Pin & Delete Action Bar -->
-          <div class="card-top-actions" onclick="event.stopPropagation()">
+        <div class="card-bottom-info">
+          <div class="user-tag">
+            <span class="avatar-circle">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="#64748B"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 1 0-16 0"></path></svg>
+            </span>
+            <span>Anonymous</span>
+          </div>
+
+          <!-- Bottom Action Buttons: Pin & Delete (Replaces Like) -->
+          <div class="card-bottom-actions">
             <button class="btn-card-action pin-btn ${isPinned ? 'active' : ''}" onclick="togglePinMedia('${item.id}', event)" title="${isPinned ? 'Unpin' : 'Pin to Top'}">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="${isPinned ? '#F59E0B' : 'none'}" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="17" x2="12" y2="22"></line>
                 <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
               </svg>
             </button>
+
             <button class="btn-card-action trash-btn" onclick="deleteMedia('${item.id}', event)" title="Delete Permanently">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
             </button>
-          </div>
-
-          <!-- Bottom Cinematic Gradient Metadata Bar -->
-          <div class="card-cinematic-footer">
-            <div class="cinematic-user-pill">
-              <span class="cinematic-avatar">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 1 0-16 0"></path></svg>
-              </span>
-              <span class="cinematic-username">${isVideo ? 'Video' : 'Photo'}</span>
-            </div>
-            <div class="cinematic-stats-pill">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-              <span>Live</span>
-            </div>
           </div>
         </div>
       </div>
@@ -814,20 +767,26 @@ window.openModal = function(id) {
   const item = allMedia.find(m => m.id === id);
   if (!item) return;
 
-  const isVideo = isVideoItem(item);
-  let mediaUrl = item.url;
+  const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video')) || /\.(mp4|3gp|mov|webm|avi|mkv)(\?.*)?$/i.test(item.url || '');
+  let streamUrl = item.url;
   if (isVideo) {
-    const { streamUrl } = getOptimizedVideoUrls(item);
-    mediaUrl = streamUrl;
+    if (item.publicId) {
+      streamUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
+    } else if (streamUrl && streamUrl.includes('/video/upload/')) {
+      if (!streamUrl.includes('f_mp4')) {
+        streamUrl = streamUrl.replace('/video/upload/', '/video/upload/f_mp4,vc_h264/');
+      }
+      streamUrl = streamUrl.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
+    }
   }
 
   modalName.textContent = item.originalName;
   modalMeta.textContent = `Uploaded Just Now • ${formatBytes(item.size)}`;
-  modalRawBtn.href = mediaUrl;
+  modalRawBtn.href = streamUrl;
 
   if (isVideo) {
     modalMedia.innerHTML = `
-      <video src="${mediaUrl}" controls autoplay playsinline style="max-height: 75vh; width: 100%; border-radius: 12px; background: #000;"></video>
+      <video src="${streamUrl}" controls autoplay playsinline style="max-height: 75vh; width: 100%; border-radius: 12px; background: #000;"></video>
     `;
   } else {
     modalMedia.innerHTML = `<img src="${item.url}" alt="${item.originalName}" style="max-height: 75vh; width: 100%; object-fit: contain;" />`;
@@ -930,7 +889,6 @@ async function loadStorageStats() {
 
 // Always force the lockscreen PIN keypad every single time the page is opened or reloaded
 function startApp() {
-  initViewTabs();
   // Wipe any residual PIN from memory / history
   window.history.replaceState({}, '', window.location.pathname);
   showPinGateway();
