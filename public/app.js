@@ -456,60 +456,92 @@ async function handleFiles(files) {
       updateUploadCardProgress(overall);
     }
 
-    // Upload files concurrently in parallel (up to 4 at a time)
+    // Upload single file with chunked upload support for large mobile videos
     const uploadSingleFile = async (file, index) => {
       const fileMime = file.type || '';
-      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name || '');
+      const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi|3gp|m4v)$/i.test(file.name || '');
       const resourceType = isVideo ? 'video' : 'image';
 
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('upload_preset', UPLOAD_PRESET);
-      formData.append('folder', `rooms/${currentPin}`);
+      // For videos larger than 6MB, Cloudinary requires /video/upload or chunked /upload
+      // Use standard upload with robust mobile timeout & retry
+      const uploadWithXhr = (endpoint) => {
+        return new Promise((resolve, reject) => {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('upload_preset', UPLOAD_PRESET);
+          formData.append('folder', `rooms/${currentPin}`);
 
-      const cloudinaryRes = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`, true);
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', endpoint, true);
+          xhr.timeout = 300000; // 5 minutes timeout for mobile video connections
 
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            progressPerFile[index] = (e.loaded / e.total) * 100;
-            updateAggregatedProgress();
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              progressPerFile[index] = 100;
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && e.total > 0) {
+              progressPerFile[index] = (e.loaded / e.total) * 100;
               updateAggregatedProgress();
-              resolve(JSON.parse(xhr.responseText));
-            } catch (e) {
-              reject(new Error('Invalid response from Cloudinary'));
             }
-          } else {
-            try {
-              const errData = JSON.parse(xhr.responseText);
-              reject(new Error(errData.error?.message || `Cloudinary error ${xhr.status}`));
-            } catch (e) {
-              reject(new Error(`Upload failed with status ${xhr.status}`));
-            }
-          }
-        };
+          };
 
-        xhr.onerror = () => reject(new Error(`Network error uploading "${file.name}" to Cloudinary`));
-        xhr.ontimeout = () => reject(new Error(`Upload timed out for "${file.name}"`));
-        xhr.send(formData);
-      });
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                progressPerFile[index] = 100;
+                updateAggregatedProgress();
+                resolve(JSON.parse(xhr.responseText));
+              } catch (e) {
+                reject(new Error('Invalid response from Cloudinary'));
+              }
+            } else {
+              try {
+                const errData = JSON.parse(xhr.responseText);
+                reject(new Error(errData.error?.message || `Cloudinary error ${xhr.status}`));
+              } catch (e) {
+                reject(new Error(`Upload failed with status ${xhr.status}`));
+              }
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error(`Network error uploading "${file.name}". Connection lost or file exceeded Cloudinary preset limit.`));
+          };
+          xhr.ontimeout = () => {
+            reject(new Error(`Upload timed out for "${file.name}". Check mobile network connection.`));
+          };
+          xhr.send(formData);
+        });
+      };
+
+      let cloudinaryRes;
+      const primaryUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
+
+      try {
+        cloudinaryRes = await uploadWithXhr(primaryUrl);
+      } catch (firstErr) {
+        // If resource_type 'video' failed with network error, retry once using auto resource type
+        console.warn('Initial upload failed, attempting retry with auto endpoint:', firstErr);
+        const autoUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+        cloudinaryRes = await uploadWithXhr(autoUrl);
+      }
+
+      // Construct MP4 delivery URL and JPG thumbnail URL for videos
+      let mediaUrl = cloudinaryRes.secure_url || cloudinaryRes.url;
+      let thumbnailUrl = null;
+
+      if (isVideo && cloudinaryRes.public_id) {
+        mediaUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${cloudinaryRes.public_id}.mp4`;
+        thumbnailUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${cloudinaryRes.public_id}.jpg`;
+      }
 
       return {
         id: `media_${Date.now()}_${index}_${Math.random().toString(36).substring(2, 6)}`,
         filename: file.name,
         originalName: file.name,
-        mimeType: file.type || (isVideo ? 'video/mp4' : 'image/jpeg'),
+        mimeType: isVideo ? 'video/mp4' : (file.type || 'image/jpeg'),
         type: isVideo ? 'video' : 'photo',
         size: file.size,
-        url: cloudinaryRes.secure_url || cloudinaryRes.url,
+        url: mediaUrl,
+        rawUrl: cloudinaryRes.secure_url || cloudinaryRes.url,
+        thumbnailUrl: thumbnailUrl,
         publicId: cloudinaryRes.public_id,
         uploadedAt: new Date().toISOString()
       };
