@@ -293,6 +293,16 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script type="module">
+    // Load modern WebCodecs hardware compressor (Mediabunny)
+    try {
+      const mb = await import('https://cdn.jsdelivr.net/npm/mediabunny@1.29.0/+esm');
+      window.MediaBunny = mb;
+      console.log('⚡ Hardware WebCodecs Transcoder ready (Mediabunny)');
+    } catch (e) {
+      console.warn('WebCodecs module could not be loaded via CDN, fallback available:', e);
+    }
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
