@@ -456,24 +456,91 @@ async function handleFiles(files) {
       updateUploadCardProgress(overall);
     }
 
-    // Upload single file with chunked upload support for large mobile videos
+    // Upload single file with automatic chunked upload for videos & large files
     const uploadSingleFile = async (file, index) => {
       const fileMime = file.type || '';
       const isVideo = fileMime.startsWith('video') || /\.(mp4|mov|webm|mkv|avi|3gp|m4v)$/i.test(file.name || '');
       const resourceType = isVideo ? 'video' : 'image';
 
-      // For videos larger than 6MB, Cloudinary requires /video/upload or chunked /upload
-      // Use standard upload with robust mobile timeout & retry
-      const uploadWithXhr = (endpoint) => {
-        return new Promise((resolve, reject) => {
+      // Cloudinary chunked upload for files >= 6MB (vital for mobile 4G/5G connections)
+      const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB per chunk
+      let cloudinaryRes;
+
+      if (file.size > CHUNK_SIZE) {
+        // Chunked upload sequence
+        const uniqueUploadId = 'uid_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+
+          const formData = new FormData();
+          formData.append('file', chunk);
+          formData.append('upload_preset', UPLOAD_PRESET);
+          formData.append('folder', `rooms/${currentPin}`);
+
+          // Content-Range format: bytes start-end_inclusive/total
+          const contentRange = `bytes ${start}-${end - 1}/${file.size}`;
+
+          const chunkRes = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`, true);
+            xhr.setRequestHeader('X-Unique-Upload-Id', uniqueUploadId);
+            xhr.setRequestHeader('Content-Range', contentRange);
+            xhr.timeout = 180000; // 3 minutes per 6MB chunk
+
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable && e.total > 0) {
+                const chunkProgress = e.loaded / e.total;
+                const fileProgress = ((start + (chunkProgress * (end - start))) / file.size) * 100;
+                progressPerFile[index] = Math.min(99, fileProgress);
+                updateAggregatedProgress();
+              }
+            };
+
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  resolve(JSON.parse(xhr.responseText));
+                } catch (e) {
+                  resolve({});
+                }
+              } else {
+                try {
+                  const errData = JSON.parse(xhr.responseText);
+                  reject(new Error(errData.error?.message || `Upload failed with status ${xhr.status}`));
+                } catch (e) {
+                  reject(new Error(`Chunk upload failed with status ${xhr.status}`));
+                }
+              }
+            };
+
+            xhr.onerror = () => reject(new Error(`Network error on chunk ${i + 1}/${totalChunks}. Check mobile connection.`));
+            xhr.ontimeout = () => reject(new Error(`Chunk ${i + 1}/${totalChunks} timed out. Retrying...`));
+            xhr.send(formData);
+          });
+
+          // The final chunk returns the asset metadata
+          if (i === totalChunks - 1) {
+            cloudinaryRes = chunkRes;
+          }
+        }
+
+        progressPerFile[index] = 100;
+        updateAggregatedProgress();
+      } else {
+        // Standard single-payload upload for files under 6MB
+        cloudinaryRes = await new Promise((resolve, reject) => {
           const formData = new FormData();
           formData.append('file', file);
           formData.append('upload_preset', UPLOAD_PRESET);
           formData.append('folder', `rooms/${currentPin}`);
 
           const xhr = new XMLHttpRequest();
-          xhr.open('POST', endpoint, true);
-          xhr.timeout = 300000; // 5 minutes timeout for mobile video connections
+          xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`, true);
+          xhr.timeout = 180000;
 
           xhr.upload.onprogress = (e) => {
             if (e.lengthComputable && e.total > 0) {
@@ -501,26 +568,10 @@ async function handleFiles(files) {
             }
           };
 
-          xhr.onerror = () => {
-            reject(new Error(`Network error uploading "${file.name}". Connection lost or file exceeded Cloudinary preset limit.`));
-          };
-          xhr.ontimeout = () => {
-            reject(new Error(`Upload timed out for "${file.name}". Check mobile network connection.`));
-          };
+          xhr.onerror = () => reject(new Error(`Network error uploading "${file.name}". Connection lost or file exceeded Cloudinary preset limit.`));
+          xhr.ontimeout = () => reject(new Error(`Upload timed out for "${file.name}". Check mobile network connection.`));
           xhr.send(formData);
         });
-      };
-
-      let cloudinaryRes;
-      const primaryUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`;
-
-      try {
-        cloudinaryRes = await uploadWithXhr(primaryUrl);
-      } catch (firstErr) {
-        // If resource_type 'video' failed with network error, retry once using auto resource type
-        console.warn('Initial upload failed, attempting retry with auto endpoint:', firstErr);
-        const autoUrl = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
-        cloudinaryRes = await uploadWithXhr(autoUrl);
       }
 
       // Construct MP4 delivery URL and JPG thumbnail URL for videos
