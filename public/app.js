@@ -935,9 +935,6 @@ function startApp() {
   window.history.replaceState({}, '', window.location.pathname);
   showPinGateway();
 }
-  window.history.replaceState({}, '', window.location.pathname);
-  showPinGateway();
-}
 
 initSocket();
 startApp();
