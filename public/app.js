@@ -59,6 +59,14 @@ const qrClose = document.getElementById('qrClose');
 const qrCanvas = document.getElementById('qrCanvas');
 const qrDisplayUrl = document.getElementById('qrDisplayUrl');
 
+const downloadModal = document.getElementById('downloadModal');
+const downloadModalClose = document.getElementById('downloadModalClose');
+const downloadModalSubtitle = document.getElementById('downloadModalSubtitle');
+const btnDownloadZip = document.getElementById('btnDownloadZip');
+const btnDownloadSeparately = document.getElementById('btnDownloadSeparately');
+const downloadStatusBox = document.getElementById('downloadStatusBox');
+const downloadStatusText = document.getElementById('downloadStatusText');
+
 // Storage Progress DOM
 const storageSummaryText = document.getElementById('storageSummaryText');
 const storageRemainingText = document.getElementById('storageRemainingText');
@@ -71,6 +79,7 @@ const batchActionBar = document.getElementById('batchActionBar');
 const batchCountBadge = document.getElementById('batchCountBadge');
 const btnBatchSelectAll = document.getElementById('btnBatchSelectAll');
 const batchSelectAllLabel = document.getElementById('batchSelectAllLabel');
+const btnBatchDownload = document.getElementById('btnBatchDownload');
 const btnBatchPin = document.getElementById('btnBatchPin');
 const batchPinLabel = document.getElementById('batchPinLabel');
 const btnBatchDelete = document.getElementById('btnBatchDelete');
@@ -1051,6 +1060,195 @@ if (btnBatchSelectAll) {
       allMedia.forEach(m => selectedMediaIds.add(m.id));
     }
     render();
+  });
+}
+
+// Helper to get selected media items
+function getSelectedItems() {
+  return allMedia.filter(m => selectedMediaIds.has(m.id));
+}
+
+// Download Button Click -> Show Modal
+if (btnBatchDownload) {
+  btnBatchDownload.addEventListener('click', () => {
+    const selected = getSelectedItems();
+    if (selected.length === 0) return;
+    openDownloadModal(selected.length);
+  });
+}
+
+function openDownloadModal(count) {
+  if (downloadModalSubtitle) {
+    downloadModalSubtitle.textContent = `Choose how to download your ${count} selected file${count > 1 ? 's' : ''}:`;
+  }
+  if (downloadStatusBox) downloadStatusBox.classList.add('hidden');
+  downloadModal.classList.add('active');
+}
+
+function closeDownloadModal() {
+  downloadModal.classList.remove('active');
+}
+
+if (downloadModalClose) {
+  downloadModalClose.addEventListener('click', closeDownloadModal);
+}
+if (downloadModal) {
+  downloadModal.addEventListener('click', (e) => {
+    if (e.target === downloadModal) closeDownloadModal();
+  });
+}
+
+// Helper to fetch Blob safely
+async function fetchFileBlob(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    return await res.blob();
+  } catch (err) {
+    console.warn(`Direct fetch failed for ${url}, trying cors proxy / fallback...`, err);
+    // If CORS or other issue occurs, fetch without special options
+    const fallbackRes = await fetch(url, { mode: 'cors' });
+    return await fallbackRes.blob();
+  }
+}
+
+// 1. Download as ZIP archive using JSZip + FileSaver
+if (btnDownloadZip) {
+  btnDownloadZip.addEventListener('click', async () => {
+    const selected = getSelectedItems();
+    if (selected.length === 0) return;
+
+    if (!window.JSZip || !window.saveAs) {
+      alert('ZIP download library is still loading. Please try again in a moment.');
+      return;
+    }
+
+    if (downloadStatusBox) downloadStatusBox.classList.remove('hidden');
+    btnDownloadZip.disabled = true;
+    btnDownloadSeparately.disabled = true;
+
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set();
+
+      for (let i = 0; i < selected.length; i++) {
+        const item = selected[i];
+        if (downloadStatusText) {
+          downloadStatusText.textContent = `Downloading (${i + 1}/${selected.length}): ${item.originalName || 'file'}...`;
+        }
+
+        let fileName = item.originalName || `media_${i + 1}`;
+        // Ensure unique names inside the ZIP
+        let finalName = fileName;
+        let counter = 1;
+        while (usedNames.has(finalName)) {
+          const dotIdx = fileName.lastIndexOf('.');
+          if (dotIdx !== -1) {
+            finalName = `${fileName.slice(0, dotIdx)} (${counter})${fileName.slice(dotIdx)}`;
+          } else {
+            finalName = `${fileName} (${counter})`;
+          }
+          counter++;
+        }
+        usedNames.add(finalName);
+
+        try {
+          const blob = await fetchFileBlob(item.url);
+          zip.file(finalName, blob);
+        } catch (itemErr) {
+          console.error(`Failed to fetch file for ZIP: ${item.url}`, itemErr);
+        }
+      }
+
+      if (downloadStatusText) {
+        downloadStatusText.textContent = `Compacting files into ZIP archive...`;
+      }
+
+      const zipBlob = await zip.generateAsync({
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 }
+      }, (metadata) => {
+        if (downloadStatusText) {
+          downloadStatusText.textContent = `Generating ZIP: ${Math.round(metadata.percent)}%`;
+        }
+      });
+
+      const roomName = currentPin ? `AlphaBeta_Room_${currentPin}` : 'AlphaBeta_Files';
+      const timestamp = new Date().toISOString().slice(0, 10);
+      saveAs(zipBlob, `${roomName}_${timestamp}.zip`);
+
+      closeDownloadModal();
+      popToast(`<strong>${selected.length} files</strong> downloaded as ZIP archive! 📦`);
+    } catch (err) {
+      console.error('ZIP creation error:', err);
+      alert('Error creating ZIP file: ' + err.message);
+    } finally {
+      if (downloadStatusBox) downloadStatusBox.classList.add('hidden');
+      btnDownloadZip.disabled = false;
+      btnDownloadSeparately.disabled = false;
+    }
+  });
+}
+
+// 2. Download Separately one by one
+if (btnDownloadSeparately) {
+  btnDownloadSeparately.addEventListener('click', async () => {
+    const selected = getSelectedItems();
+    if (selected.length === 0) return;
+
+    if (downloadStatusBox) downloadStatusBox.classList.remove('hidden');
+    btnDownloadZip.disabled = true;
+    btnDownloadSeparately.disabled = true;
+
+    try {
+      for (let i = 0; i < selected.length; i++) {
+        const item = selected[i];
+        if (downloadStatusText) {
+          downloadStatusText.textContent = `Downloading file (${i + 1}/${selected.length}): ${item.originalName || 'file'}...`;
+        }
+
+        try {
+          // Download via blob to trigger genuine browser file save with original name
+          const blob = await fetchFileBlob(item.url);
+          if (window.saveAs) {
+            saveAs(blob, item.originalName || `file_${i + 1}`);
+          } else {
+            const tempLink = document.createElement('a');
+            tempLink.href = URL.createObjectURL(blob);
+            tempLink.download = item.originalName || `file_${i + 1}`;
+            document.body.appendChild(tempLink);
+            tempLink.click();
+            document.body.removeChild(tempLink);
+            setTimeout(() => URL.revokeObjectURL(tempLink.href), 10000);
+          }
+        } catch (itemErr) {
+          console.warn(`Direct blob download failed, falling back to anchor trigger:`, itemErr);
+          const link = document.createElement('a');
+          link.href = item.url;
+          link.download = item.originalName || `file_${i + 1}`;
+          link.target = '_blank';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+
+        // Small delay between triggers so browser doesn't block multiple concurrent downloads
+        if (i < selected.length - 1) {
+          await new Promise(r => setTimeout(r, 650));
+        }
+      }
+
+      closeDownloadModal();
+      popToast(`<strong>${selected.length} files</strong> downloaded separately! 💾`);
+    } catch (err) {
+      console.error('Separate download error:', err);
+      alert('Error downloading files: ' + err.message);
+    } finally {
+      if (downloadStatusBox) downloadStatusBox.classList.add('hidden');
+      btnDownloadZip.disabled = false;
+      btnDownloadSeparately.disabled = false;
+    }
   });
 }
 

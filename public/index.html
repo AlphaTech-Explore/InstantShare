@@ -247,6 +247,11 @@
           <span id="batchSelectAllLabel">Select All</span>
         </button>
 
+        <button class="batch-btn download" id="btnBatchDownload" type="button" title="Download Selected Items">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <span>Download</span>
+        </button>
+
         <button class="batch-btn pin" id="btnBatchPin" type="button" title="Pin / Unpin Selected Items">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
           <span id="batchPinLabel">Pin to Top</span>
@@ -292,6 +297,55 @@
     </div>
   </div>
 
+  <!-- Download Options Modal for Batch Selection -->
+  <div class="modal-backdrop" id="downloadModal">
+    <div class="modal-card download-modal-content">
+      <button class="modal-close" id="downloadModalClose">&times;</button>
+      <div class="download-modal-header">
+        <div class="download-modal-icon">📦</div>
+        <h3>Download Options</h3>
+        <p id="downloadModalSubtitle">Choose how you'd like to download your selected files:</p>
+      </div>
+      <div class="download-choice-grid">
+        <button class="download-choice-card" id="btnDownloadZip" type="button">
+          <div class="choice-icon-wrap zip-wrap">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
+          <div class="choice-text">
+            <strong>Download as ZIP Archive</strong>
+            <span>Bundles all selected photos and videos into a single zip file.</span>
+          </div>
+          <div class="choice-arrow">→</div>
+        </button>
+
+        <button class="download-choice-card" id="btnDownloadSeparately" type="button">
+          <div class="choice-icon-wrap file-wrap">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </div>
+          <div class="choice-text">
+            <strong>Download Separately (One by One)</strong>
+            <span>Downloads each photo and video as an individual native file.</span>
+          </div>
+          <div class="choice-arrow">→</div>
+        </button>
+      </div>
+      <div class="download-status-box hidden" id="downloadStatusBox">
+        <div class="download-spinner"></div>
+        <span id="downloadStatusText">Preparing download...</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script type="module">
     // Load modern WebCodecs hardware compressor (Mediabunny)
