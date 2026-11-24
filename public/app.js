@@ -591,9 +591,64 @@ function updateUploadCardProgress(percent) {
   if (label) label.textContent = `Uploading... ${percent}%`;
 }
 
+let currentViewMode = 'cinematic'; // 'cinematic' | 'fullscreen' | 'masonry'
+
+function isVideoItem(item) {
+  if (!item) return false;
+  if (item.type === 'video') return true;
+  if (item.mimeType && item.mimeType.startsWith('video')) return true;
+  const testUrl = (item.url || item.originalName || '').toLowerCase();
+  return /\.(mp4|3gp|mov|webm|avi|mkv|m4v)(\?.*)?$/i.test(testUrl);
+}
+
+function getOptimizedVideoUrls(item) {
+  let streamUrl = item.url || '';
+  let posterUrl = item.thumbnailUrl || '';
+
+  if (item.publicId) {
+    streamUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
+    if (!posterUrl) {
+      posterUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${item.publicId}.jpg`;
+    }
+  } else if (streamUrl.includes('/video/upload/')) {
+    if (!streamUrl.includes('f_mp4')) {
+      streamUrl = streamUrl.replace('/video/upload/', '/video/upload/f_mp4,vc_h264/');
+    }
+    streamUrl = streamUrl.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
+    if (!posterUrl) {
+      posterUrl = streamUrl.replace('/f_mp4,vc_h264/', '/so_1.0,w_600,c_limit,q_auto,f_jpg/').replace(/\.mp4(\?.*)?$/i, '.jpg$1');
+    }
+  }
+
+  return { streamUrl, posterUrl };
+}
+
+// Setup View Mode Tab listeners
+function initViewTabs() {
+  const tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentViewMode = tab.getAttribute('data-view') || 'cinematic';
+      
+      const grid = document.getElementById('mediaGrid');
+      if (grid) {
+        grid.className = `media-grid mode-${currentViewMode}`;
+      }
+      render();
+    });
+  });
+}
+
 // ==================== RENDER FEED ====================
 function render() {
   let html = '';
+
+  const grid = document.getElementById('mediaGrid');
+  if (grid) {
+    grid.className = `media-grid mode-${currentViewMode}`;
+  }
 
   if (uploadProgress !== null) {
     const isMobile = window.innerWidth <= 768;
@@ -617,42 +672,20 @@ function render() {
     emptyNotice.style.display = 'none';
   }
 
-  // Filter media based on selected tab
-  let displayMedia = [...allMedia];
-  if (currentFilter === 'photos') {
-    displayMedia = displayMedia.filter(m => m.type !== 'video');
-  } else if (currentFilter === 'videos') {
-    displayMedia = displayMedia.filter(m => m.type === 'video');
-  }
-
-  // Sort pinned items to the very top, preserving upload order otherwise
-  const sortedMedia = displayMedia.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  // All uploaded media is included in every view mode
+  const sortedMedia = [...allMedia].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   sortedMedia.forEach((item, index) => {
-    const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video'));
-    const originalName = item.originalName || 'Untitled Media';
+    const isVideo = isVideoItem(item);
+    const originalName = item.originalName || (isVideo ? 'Video' : 'Photo');
     const isPinned = !!item.pinned;
+    const { streamUrl, posterUrl } = isVideo ? getOptimizedVideoUrls(item) : { streamUrl: '', posterUrl: '' };
 
-    // Resolve robust MP4 streaming URL and thumbnail poster
-    let videoStreamUrl = item.url;
-    let posterUrl = item.thumbnailUrl;
-
-    if (isVideo && item.publicId) {
-      videoStreamUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
-      if (!posterUrl) {
-        posterUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/so_1.0,w_600,c_limit,q_auto,f_jpg/${item.publicId}.jpg`;
-      }
-    } else if (isVideo && item.url && !item.url.endsWith('.mp4')) {
-      // If Cloudinary URL has .3gp or other extension, transform to .mp4
-      videoStreamUrl = item.url.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
-    }
-
-    // Cinematic modern masonry card with frosted dark gradient overlay
     html += `
       <div class="card-item ${isPinned ? 'is-pinned' : ''} ${isVideo ? 'item-video' : 'item-photo'}" onclick="openModal('${item.id}')">
         <div class="card-media-box">
           ${isVideo ? `
-            <video class="card-video" src="${videoStreamUrl}#t=0.1" ${posterUrl ? `poster="${posterUrl}"` : ''} preload="metadata" muted playsinline></video>
+            <video class="card-video" src="${streamUrl}#t=0.1" ${posterUrl ? `poster="${posterUrl}"` : ''} preload="metadata" muted playsinline></video>
             <div class="card-overlay-play">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
             </div>
@@ -781,12 +814,11 @@ window.openModal = function(id) {
   const item = allMedia.find(m => m.id === id);
   if (!item) return;
 
-  const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video'));
+  const isVideo = isVideoItem(item);
   let mediaUrl = item.url;
-  if (isVideo && item.publicId) {
-    mediaUrl = `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264/${item.publicId}.mp4`;
-  } else if (isVideo && item.url && !item.url.endsWith('.mp4')) {
-    mediaUrl = item.url.replace(/\.(3gp|mov|avi|webm|mkv)(\?.*)?$/i, '.mp4$2');
+  if (isVideo) {
+    const { streamUrl } = getOptimizedVideoUrls(item);
+    mediaUrl = streamUrl;
   }
 
   modalName.textContent = item.originalName;
@@ -896,24 +928,13 @@ async function loadStorageStats() {
   }
 }
 
-let currentFilter = 'all';
-
-// Setup Tab Filter listeners
-document.addEventListener('DOMContentLoaded', () => {
-  const tabs = document.querySelectorAll('.nav-tab');
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      currentFilter = tab.getAttribute('data-filter') || 'all';
-      render();
-    });
-  });
-});
-
 // Always force the lockscreen PIN keypad every single time the page is opened or reloaded
 function startApp() {
+  initViewTabs();
   // Wipe any residual PIN from memory / history
+  window.history.replaceState({}, '', window.location.pathname);
+  showPinGateway();
+}
   window.history.replaceState({}, '', window.location.pathname);
   showPinGateway();
 }

@@ -715,11 +715,53 @@ body {
   font-size: 0.92rem;
 }
 
-/* ================== Media Grid (Cinematic Modern Masonry - Option B Natural Multi-Column) ================== */
-.media-grid {
+/* ================== Media Grid View Modes ================== */
+
+/* 1. Cinematic View (Default: 5-column sleek masonry with dark glass highlights) */
+.media-grid,
+.media-grid.mode-cinematic {
   column-count: 5;
   column-gap: 1.1rem;
   width: 100%;
+}
+
+/* 2. Masonry View (Denser, fluid multi-column waterfall with vibrant hover) */
+.media-grid.mode-masonry {
+  column-count: 6;
+  column-gap: 0.9rem;
+  width: 100%;
+}
+
+.media-grid.mode-masonry .card-item {
+  margin-bottom: 0.9rem;
+  border-radius: 14px;
+}
+
+/* 3. Fullscreen View (Large immersive showcase cards) */
+.media-grid.mode-fullscreen {
+  column-count: 2;
+  column-gap: 1.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.media-grid.mode-fullscreen .card-item {
+  margin-bottom: 1.5rem;
+  border-radius: 24px;
+}
+
+.media-grid.mode-fullscreen .card-video {
+  min-height: 280px;
+}
+
+.media-grid.mode-fullscreen .card-overlay-play {
+  width: 64px;
+  height: 64px;
+}
+
+.media-grid.mode-fullscreen .card-overlay-play svg {
+  width: 30px;
+  height: 30px;
 }
 
 .card-item {
@@ -914,25 +956,52 @@ body {
   color: rgba(255, 255, 255, 0.9);
 }
 
-/* Mobile Masonry Grid Columns */
+/* Responsive Column Adjustments per View Mode */
 @media (max-width: 1200px) {
-  .media-grid {
+  .media-grid,
+  .media-grid.mode-cinematic {
     column-count: 4;
     column-gap: 1rem;
+  }
+  .media-grid.mode-masonry {
+    column-count: 5;
+    column-gap: 0.85rem;
+  }
+  .media-grid.mode-fullscreen {
+    column-count: 2;
+    column-gap: 1.2rem;
   }
 }
 
 @media (max-width: 900px) {
-  .media-grid {
+  .media-grid,
+  .media-grid.mode-cinematic {
     column-count: 3;
     column-gap: 0.85rem;
+  }
+  .media-grid.mode-masonry {
+    column-count: 4;
+    column-gap: 0.75rem;
+  }
+  .media-grid.mode-fullscreen {
+    column-count: 1;
+    max-width: 600px;
   }
 }
 
 @media (max-width: 640px) {
-  .media-grid {
+  .media-grid,
+  .media-grid.mode-cinematic {
     column-count: 2;
     column-gap: 0.7rem;
+  }
+  .media-grid.mode-masonry {
+    column-count: 2;
+    column-gap: 0.55rem;
+  }
+  .media-grid.mode-fullscreen {
+    column-count: 1;
+    width: 100%;
   }
 
   .card-item {
