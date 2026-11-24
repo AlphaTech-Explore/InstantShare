@@ -1,4 +1,7 @@
 // State
+const CLOUD_NAME = 'diubhg6ri';
+const UPLOAD_PRESET = 'alphabeta_uploads';
+
 let currentPin = null;
 let currentEnteredPin = "";
 let isCreateMode = false;
@@ -425,8 +428,6 @@ async function handleFiles(files) {
     const totalFiles = fileList.length;
     if (totalFiles === 0) return;
 
-    const CLOUD_NAME = 'diubhg6ri';
-    const UPLOAD_PRESET = 'alphabeta_uploads';
     const progressPerFile = new Array(totalFiles).fill(0);
 
     function updateAggregatedProgress() {
