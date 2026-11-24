@@ -10,6 +10,10 @@ let socket = null;
 let uploadProgress = null;
 let pollTimer = null;
 
+// Multi-Select State
+let isSelectMode = false;
+const selectedMediaIds = new Set();
+
 // DOM Elements - Keypad Gateway
 const pinGateway = document.getElementById('pinGateway');
 const mainApp = document.getElementById('mainApp');
@@ -59,6 +63,18 @@ const qrDisplayUrl = document.getElementById('qrDisplayUrl');
 const storageSummaryText = document.getElementById('storageSummaryText');
 const storageRemainingText = document.getElementById('storageRemainingText');
 const storageFill = document.getElementById('storageFill');
+
+// Batch Selection Toolbar DOM
+const btnToggleSelectMode = document.getElementById('btnToggleSelectMode');
+const selectModeLabel = document.getElementById('selectModeLabel');
+const batchActionBar = document.getElementById('batchActionBar');
+const batchCountBadge = document.getElementById('batchCountBadge');
+const btnBatchSelectAll = document.getElementById('btnBatchSelectAll');
+const batchSelectAllLabel = document.getElementById('batchSelectAllLabel');
+const btnBatchPin = document.getElementById('btnBatchPin');
+const batchPinLabel = document.getElementById('batchPinLabel');
+const btnBatchDelete = document.getElementById('btnBatchDelete');
+const btnBatchCancel = document.getElementById('btnBatchCancel');
 
 const PASTEL_BORDERS = [
   '#FFD2C2', // Peach
@@ -220,6 +236,7 @@ async function handlePinSubmit() {
 btnSwitchRoom.addEventListener('click', showPinGateway);
 
 function showPinGateway() {
+  exitSelectMode();
   localStorage.removeItem('active_room_pin');
   currentPin = null;
   allMedia = []; // Immediately wipe media state so no other room's files can ever be seen
@@ -242,6 +259,9 @@ function showPinGateway() {
 
 // Enter Room with Room No.
 async function enterRoom(pin) {
+  // Reset multi-select state on entering a room
+  exitSelectMode();
+
   // Stop existing polling immediately
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -613,6 +633,7 @@ function render() {
     const isVideo = item.type === 'video' || (item.mimeType && item.mimeType.startsWith('video')) || /\.(mp4|3gp|mov|webm|avi|mkv)(\?.*)?$/i.test(item.url || '');
     const originalName = item.originalName || 'Untitled Media';
     const isPinned = !!item.pinned;
+    const isSelected = selectedMediaIds.has(item.id);
     const likesCount = item.likes || 0;
     const isLiked = localStorage.getItem(`liked_${item.id}`) === 'true';
 
@@ -637,8 +658,13 @@ function render() {
     }
 
     html += `
-      <div class="card-item ${isPinned ? 'is-pinned' : ''}" style="--border-theme: ${borderColor};">
-        <div class="card-media-box" onclick="openModal('${item.id}')">
+      <div class="card-item ${isPinned ? 'is-pinned' : ''} ${isSelected ? 'is-selected' : ''}" style="--border-theme: ${borderColor};" onclick="handleCardClick('${item.id}', event)">
+        <!-- Multi-select Checkbox Checkmark -->
+        <div class="card-select-checkbox" onclick="toggleSelectItem('${item.id}', event)" title="Select this item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        </div>
+
+        <div class="card-media-box">
           ${isVideo ? `
             <video class="card-video" src="${videoStreamUrl}#t=0.1" ${posterUrl ? `poster="${posterUrl}"` : ''} preload="metadata" muted playsinline></video>
             <div class="card-overlay-play">
@@ -682,6 +708,178 @@ function render() {
   });
 
   mediaGrid.innerHTML = html;
+  updateBatchBarUI();
+}
+
+// ==================== MULTI-SELECT & BATCH ACTIONS ====================
+function toggleSelectMode() {
+  isSelectMode = !isSelectMode;
+  if (!isSelectMode) {
+    selectedMediaIds.clear();
+  }
+  updateSelectModeUI();
+  render();
+}
+
+function exitSelectMode() {
+  isSelectMode = false;
+  selectedMediaIds.clear();
+  updateSelectModeUI();
+  updateBatchBarUI();
+}
+
+function updateSelectModeUI() {
+  if (btnToggleSelectMode) {
+    if (isSelectMode) {
+      btnToggleSelectMode.classList.add('active');
+      selectModeLabel.textContent = 'Done Selecting';
+    } else {
+      btnToggleSelectMode.classList.remove('active');
+      selectModeLabel.textContent = 'Select Multiple';
+    }
+  }
+
+  if (mainApp) {
+    if (isSelectMode) {
+      mainApp.classList.add('select-mode-active');
+    } else {
+      mainApp.classList.remove('select-mode-active');
+    }
+  }
+}
+
+function updateBatchBarUI() {
+  if (!batchActionBar) return;
+  const count = selectedMediaIds.size;
+  if (count > 0) {
+    batchActionBar.classList.remove('hidden');
+    if (batchCountBadge) batchCountBadge.textContent = count;
+    
+    // Check if all selected items are already pinned or unpinned
+    const selectedItems = allMedia.filter(m => selectedMediaIds.has(m.id));
+    const allArePinned = selectedItems.length > 0 && selectedItems.every(m => m.pinned);
+    if (batchPinLabel) {
+      batchPinLabel.textContent = allArePinned ? 'Unpin All' : 'Pin to Top';
+    }
+
+    if (batchSelectAllLabel) {
+      batchSelectAllLabel.textContent = count === allMedia.length ? 'Deselect All' : 'Select All';
+    }
+  } else {
+    batchActionBar.classList.add('hidden');
+    if (batchSelectAllLabel) {
+      batchSelectAllLabel.textContent = 'Select All';
+    }
+  }
+}
+
+window.handleCardClick = function(id, event) {
+  // If in selection mode or has active selections, clicking anywhere on card selects/deselects it
+  if (isSelectMode || selectedMediaIds.size > 0) {
+    event.stopPropagation();
+    window.toggleSelectItem(id, event);
+    return;
+  }
+  window.openModal(id);
+};
+
+window.toggleSelectItem = function(id, event) {
+  event.stopPropagation();
+  if (selectedMediaIds.has(id)) {
+    selectedMediaIds.delete(id);
+  } else {
+    selectedMediaIds.add(id);
+    if (!isSelectMode) {
+      isSelectMode = true;
+      updateSelectModeUI();
+    }
+  }
+  render();
+};
+
+// Batch Select / Deselect All
+if (btnBatchSelectAll) {
+  btnBatchSelectAll.addEventListener('click', () => {
+    if (selectedMediaIds.size === allMedia.length) {
+      selectedMediaIds.clear();
+    } else {
+      allMedia.forEach(m => selectedMediaIds.add(m.id));
+    }
+    render();
+  });
+}
+
+// Batch Pin / Unpin
+if (btnBatchPin) {
+  btnBatchPin.addEventListener('click', async () => {
+    if (!currentPin || selectedMediaIds.size === 0) return;
+    const ids = Array.from(selectedMediaIds);
+    const selectedItems = allMedia.filter(m => selectedMediaIds.has(m.id));
+    const allArePinned = selectedItems.every(m => m.pinned);
+    const targetState = !allArePinned;
+
+    // Optimistic UI update
+    allMedia.forEach(m => {
+      if (selectedMediaIds.has(m.id)) {
+        m.pinned = targetState;
+      }
+    });
+    render();
+
+    try {
+      await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-batch-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, pinState: targetState })
+      });
+      popToast(`<strong>${ids.length} files</strong> ${targetState ? 'pinned to top' : 'unpinned'}! 📌`);
+    } catch (e) {
+      console.error('Batch pin error:', e);
+    }
+  });
+}
+
+// Batch Delete
+if (btnBatchDelete) {
+  btnBatchDelete.addEventListener('click', async () => {
+    if (!currentPin || selectedMediaIds.size === 0) return;
+    const ids = Array.from(selectedMediaIds);
+    const confirmed = window.confirm(`Permanently delete ${ids.length} selected file(s) from this room and Cloudinary?`);
+    if (!confirmed) return;
+
+    // Optimistic UI update
+    allMedia = allMedia.filter(m => !selectedMediaIds.has(m.id));
+    selectedMediaIds.clear();
+    exitSelectMode();
+    render();
+    loadStorageStats();
+
+    try {
+      const res = await fetch(`/api/room/${encodeURIComponent(currentPin)}/media-batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      if (res.ok) {
+        popToast(`<strong>${ids.length} files</strong> deleted permanently! 🗑️`);
+      }
+      loadStorageStats();
+    } catch (e) {
+      console.error('Batch delete error:', e);
+    }
+  });
+}
+
+// Cancel Multi-Select
+if (btnBatchCancel) {
+  btnBatchCancel.addEventListener('click', () => {
+    exitSelectMode();
+    render();
+  });
+}
+
+if (btnToggleSelectMode) {
+  btnToggleSelectMode.addEventListener('click', toggleSelectMode);
 }
 
 // Like / Favorite media

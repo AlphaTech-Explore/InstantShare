@@ -632,6 +632,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 
 .feed-header h2 {
@@ -639,6 +641,228 @@ body {
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text-dark);
+}
+
+.btn-select-mode {
+  background: #FFFDF9;
+  border: 1.8px solid var(--dark-border);
+  color: var(--text-dark);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.45rem 0.95rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--dark-border);
+  transition: all 0.15s ease;
+}
+
+.btn-select-mode:hover {
+  background: #EFF6FF;
+  border-color: #3B82F6;
+  color: #1D4ED8;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 #1D4ED8;
+}
+
+.btn-select-mode.active {
+  background: #1E293B;
+  color: #FFFFFF;
+  border-color: #1E293B;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* Card Selection Checkbox Overlay */
+.card-select-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--dark-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+/* Reveal checkboxes in selection mode or on hover */
+.select-mode-active .card-select-checkbox {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.card-item:hover .card-select-checkbox {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.card-item.is-selected {
+  outline: 3.5px solid #3B82F6;
+  outline-offset: 2px;
+  transform: translateY(-3px) scale(0.98);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.25);
+}
+
+.card-item.is-selected .card-select-checkbox {
+  background: #3B82F6;
+  border-color: #1D4ED8;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.card-select-checkbox svg {
+  color: #FFFFFF;
+  display: none;
+}
+
+.card-item.is-selected .card-select-checkbox svg {
+  display: block;
+}
+
+/* Floating Batch Action Toolbar */
+.batch-action-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  z-index: 400;
+  width: calc(100% - 32px);
+  max-width: 580px;
+  transition: all 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.batch-action-bar.hidden {
+  transform: translateX(-50%) translateY(120%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.batch-bar-content {
+  background: #FFFDF9;
+  border: 2.4px solid var(--dark-border);
+  border-radius: 9999px;
+  padding: 0.65rem 1rem 0.65rem 1.3rem;
+  box-shadow: 0 8px 0 var(--dark-border), 0 16px 32px rgba(35, 39, 51, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  backdrop-filter: blur(8px);
+}
+
+.batch-selection-info {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.batch-count-badge {
+  background: #3B82F6;
+  color: #FFFFFF;
+  font-weight: 800;
+  font-size: 0.82rem;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.batch-count-text {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+
+.batch-button-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.batch-btn {
+  border: 1.8px solid var(--dark-border);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.42rem 0.85rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--dark-border);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.batch-btn:hover {
+  transform: translateY(-1px);
+}
+
+.batch-btn.select-all {
+  background: #F1F5F9;
+  color: #334155;
+}
+
+.batch-btn.pin {
+  background: #FEF3C7;
+  color: #B45309;
+}
+
+.batch-btn.pin:hover {
+  background: #FDE68A;
+  box-shadow: 0 3px 0 var(--dark-border);
+}
+
+.batch-btn.delete {
+  background: #FEE2E2;
+  color: #B91C1C;
+}
+
+.batch-btn.delete:hover {
+  background: #FECACA;
+  box-shadow: 0 3px 0 var(--dark-border);
+}
+
+.batch-btn.cancel {
+  background: #F1F5F9;
+  color: #64748B;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+
+.batch-btn.cancel:hover {
+  background: #E2E8F0;
+  color: var(--text-dark);
+}
+
+@media (max-width: 580px) {
+  .batch-bar-content {
+    padding: 0.55rem 0.75rem;
+    gap: 0.4rem;
+  }
+  .batch-btn {
+    padding: 0.38rem 0.65rem;
+    font-size: 0.76rem;
+  }
+  .batch-count-text {
+    display: none;
+  }
 }
 
 /* Empty room state */

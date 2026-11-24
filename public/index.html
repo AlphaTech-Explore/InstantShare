@@ -186,9 +186,17 @@
       </div>
     </div>
 
-    <!-- Feed Title -->
+    <!-- Feed Header with Multi-Select Action Trigger -->
     <div class="feed-header">
-      <h2>Live Stream & Media Feed</h2>
+      <div class="feed-header-left">
+        <h2>Live Stream & Media Feed</h2>
+      </div>
+      <div class="feed-header-right">
+        <button class="btn-select-mode" id="btnToggleSelectMode" type="button">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><polyline points="9 11 12 14 22 4"></polyline></svg>
+          <span id="selectModeLabel">Select Multiple</span>
+        </button>
+      </div>
     </div>
 
     <!-- Empty room notice (if no files) -->
@@ -224,6 +232,36 @@
         </div>
       </div>
     </footer>
+  </div>
+
+  <!-- Floating Sticky Batch Action Toolbar (Reveals when items are selected) -->
+  <div class="batch-action-bar hidden" id="batchActionBar">
+    <div class="batch-bar-content">
+      <div class="batch-selection-info">
+        <span class="batch-count-badge" id="batchCountBadge">0</span>
+        <span class="batch-count-text" id="batchCountText">selected</span>
+      </div>
+
+      <div class="batch-button-group">
+        <button class="batch-btn select-all" id="btnBatchSelectAll" type="button" title="Select or Deselect All">
+          <span id="batchSelectAllLabel">Select All</span>
+        </button>
+
+        <button class="batch-btn pin" id="btnBatchPin" type="button" title="Pin / Unpin Selected Items">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+          <span id="batchPinLabel">Pin to Top</span>
+        </button>
+
+        <button class="batch-btn delete" id="btnBatchDelete" type="button" title="Permanently Delete Selected Items">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          <span>Delete All</span>
+        </button>
+
+        <button class="batch-btn cancel" id="btnBatchCancel" type="button" title="Exit Multi-Select">
+          ✕
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Fullscreen Modal View for Photos & Videos -->

@@ -544,7 +544,76 @@ app.delete('/api/room/:pin/media/:id', async (req, res) => {
   });
 });
 
-// 8. Toggle Pin on Media (Puts favorite at top of feed)
+// 8. Batch Delete Media (Multiple items in a single click)
+app.post('/api/room/:pin/media-batch-delete', async (req, res) => {
+  const pin = req.params.pin.trim();
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No media IDs provided' });
+  }
+
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'diubhg6ri';
+
+  const deletedIds = [];
+
+  for (const id of ids) {
+    const removed = await removeMediaFromRoom(pin, id);
+    if (removed) {
+      deletedIds.push(id);
+      if (removed.publicId && cloudinary && apiKey && apiSecret) {
+        try {
+          cloudinary.config({ cloud_name: cloudName, api_key: apiKey, api_secret: apiSecret });
+          const resourceType = removed.type === 'video' ? 'video' : 'image';
+          await cloudinary.uploader.destroy(removed.publicId, { resource_type: resourceType, invalidate: true });
+        } catch (cErr) {
+          console.warn(`[Batch Destroy Warning] Could not destroy ${removed.publicId}:`, cErr.message);
+        }
+      }
+    }
+  }
+
+  deletedIds.forEach(id => broadcastToPin(pin, { type: 'DELETE_MEDIA', id }));
+  res.json({ success: true, count: deletedIds.length, deletedIds });
+});
+
+// 9. Batch Pin Media (Pin or Unpin multiple selected items in one click)
+app.post('/api/room/:pin/media-batch-pin', async (req, res) => {
+  const pin = req.params.pin.trim();
+  const { ids, pinState } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No media IDs provided' });
+  }
+
+  const targetPinState = typeof pinState === 'boolean' ? pinState : true;
+  const updatedIds = [];
+
+  const hasDB = await connectDB();
+  if (hasDB) {
+    for (const id of ids) {
+      await Room.updateOne(
+        { pin, 'media.id': id },
+        { $set: { 'media.$.pinned': targetPinState } }
+      );
+      updatedIds.push(id);
+      broadcastToPin(pin, { type: 'PIN_MEDIA', id, pinned: targetPinState });
+    }
+  } else if (localRooms[pin] && Array.isArray(localRooms[pin].media)) {
+    ids.forEach(id => {
+      const item = localRooms[pin].media.find(m => m.id === id);
+      if (item) {
+        item.pinned = targetPinState;
+        updatedIds.push(id);
+        broadcastToPin(pin, { type: 'PIN_MEDIA', id, pinned: targetPinState });
+      }
+    });
+  }
+
+  res.json({ success: true, count: updatedIds.length, pinned: targetPinState });
+});
+
+// 10. Toggle Pin on Media (Puts favorite at top of feed)
 app.post('/api/room/:pin/media/:id/pin', async (req, res) => {
   const pin = req.params.pin.trim();
   const { id } = req.params;
