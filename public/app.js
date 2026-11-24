@@ -400,6 +400,117 @@ async function loadRoomMedia() {
   }
 }
 
+// ==================== FAST IN-BROWSER VIDEO COMPRESSION ====================
+// Automatically compresses high-bitrate phone videos over 95MB to ~40-60MB without resolution loss
+async function compressVideoIfNeeded(file) {
+  // If file is under 95MB, no compression is required
+  if (file.size <= 95 * 1024 * 1024) {
+    return file;
+  }
+
+  // Check if browser supports MediaRecorder with MP4 or WebM
+  const isVideo = file.type?.startsWith('video') || /\.(mp4|mov|webm|mkv|avi|3gp|m4v)$/i.test(file.name);
+  if (!isVideo || typeof MediaRecorder === 'undefined') {
+    return file;
+  }
+
+  // Notify user in progress label
+  updateUploadCardProgress(5);
+  const label = document.getElementById('uploadProgressLabel');
+  if (label) label.textContent = `Optimizing video (${formatBytes(file.size)})...`;
+
+  return new Promise((resolve) => {
+    try {
+      const video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+
+      const fileUrl = URL.createObjectURL(file);
+      video.src = fileUrl;
+
+      video.onloadedmetadata = () => {
+        const width = video.videoWidth || 1920;
+        const height = video.videoHeight || 1080;
+        const duration = video.duration || 10;
+
+        // Target bitrate calculated to produce ~55MB final file regardless of length
+        const targetBits = 55 * 8 * 1024 * 1024;
+        const targetBitrate = Math.max(800000, Math.min(3500000, Math.round(targetBits / duration)));
+
+        const stream = video.captureStream ? video.captureStream(30) : (video.mozCaptureStream ? video.mozCaptureStream(30) : null);
+        if (!stream) {
+          URL.revokeObjectURL(fileUrl);
+          return resolve(file);
+        }
+
+        let mimeType = 'video/mp4;codecs=avc1';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm;codecs=vp8';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'video/webm';
+          }
+        }
+
+        const recorder = new MediaRecorder(stream, {
+          mimeType: MediaRecorder.isTypeSupported(mimeType) ? mimeType : undefined,
+          videoBitsPerSecond: targetBitrate
+        });
+
+        const chunks = [];
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) chunks.push(e.data);
+        };
+
+        recorder.onstop = () => {
+          URL.revokeObjectURL(fileUrl);
+          const compressedBlob = new Blob(chunks, { type: 'video/mp4' });
+          if (compressedBlob.size > 0 && compressedBlob.size < file.size) {
+            console.log(`Video compressed from ${formatBytes(file.size)} down to ${formatBytes(compressedBlob.size)}`);
+            const compressedFile = new File([compressedBlob], file.name.replace(/\.[^.]+$/, '.mp4'), {
+              type: 'video/mp4',
+              lastModified: Date.now()
+            });
+            resolve(compressedFile);
+          } else {
+            resolve(file);
+          }
+        };
+
+        recorder.onerror = () => {
+          URL.revokeObjectURL(fileUrl);
+          resolve(file);
+        };
+
+        recorder.start(1000);
+        video.play().catch(() => {
+          URL.revokeObjectURL(fileUrl);
+          resolve(file);
+        });
+
+        video.onended = () => {
+          if (recorder.state === 'recording') recorder.stop();
+        };
+
+        // Safety timeout
+        setTimeout(() => {
+          if (recorder.state === 'recording') {
+            recorder.stop();
+          }
+        }, (duration + 5) * 1000);
+      };
+
+      video.onerror = () => {
+        URL.revokeObjectURL(fileUrl);
+        resolve(file);
+      };
+    } catch (e) {
+      console.warn('Video optimization skipped:', e);
+      resolve(file);
+    }
+  });
+}
+
 // ==================== FILE UPLOAD ====================
 btnChooseFiles.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -454,6 +565,17 @@ async function handleFiles(files) {
       const sum = progressPerFile.reduce((a, b) => a + b, 0);
       const overall = Math.round(sum / totalFiles);
       updateUploadCardProgress(overall);
+    }
+
+    // Check and compress large video files over 95MB before starting upload
+    const preparedFiles = [];
+    for (const f of fileList) {
+      if (f.size > 95 * 1024 * 1024) {
+        const compressed = await compressVideoIfNeeded(f);
+        preparedFiles.push(compressed);
+      } else {
+        preparedFiles.push(f);
+      }
     }
 
     // Upload single file with automatic chunked upload for videos & large files
@@ -599,7 +721,7 @@ async function handleFiles(files) {
     };
 
     // Parallel upload of all selected files
-    const uploadedItems = await Promise.all(fileList.map((file, i) => uploadSingleFile(file, i)));
+    const uploadedItems = await Promise.all(preparedFiles.map((file, i) => uploadSingleFile(file, i)));
 
     console.log('Uploaded all files to Cloudinary successfully:', uploadedItems);
 
