@@ -604,59 +604,63 @@ function render() {
     emptyNotice.style.display = 'none';
   }
 
+  // Filter media based on selected tab
+  let displayMedia = [...allMedia];
+  if (currentFilter === 'photos') {
+    displayMedia = displayMedia.filter(m => m.type !== 'video');
+  } else if (currentFilter === 'videos') {
+    displayMedia = displayMedia.filter(m => m.type === 'video');
+  }
+
   // Sort pinned items to the very top, preserving upload order otherwise
-  const sortedMedia = [...allMedia].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  const sortedMedia = displayMedia.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   sortedMedia.forEach((item, index) => {
-    const borderColor = PASTEL_BORDERS[index % PASTEL_BORDERS.length];
     const isVideo = item.type === 'video';
     const originalName = item.originalName || 'Untitled Media';
     const isPinned = !!item.pinned;
-    const likesCount = item.likes || 0;
-    const isLiked = localStorage.getItem(`liked_${item.id}`) === 'true';
 
+    // Cinematic modern masonry card with frosted dark gradient overlay
     html += `
-      <div class="card-item ${isPinned ? 'is-pinned' : ''}" style="--border-theme: ${borderColor};">
-        <div class="card-media-box" onclick="openModal('${item.id}')">
+      <div class="card-item ${isPinned ? 'is-pinned' : ''} ${isVideo ? 'item-video' : 'item-photo'}" onclick="openModal('${item.id}')">
+        <div class="card-media-box">
           ${isVideo ? `
             <video class="card-video" src="${item.url}#t=0.1" preload="metadata" muted playsinline></video>
             <div class="card-overlay-play">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-            </div>
-            <div class="video-duration-badge">
-              <span>▶ 0:45</span>
-            </div>
-            <div class="live-badge">
-              <span>🔥 Live Streaming</span>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
             </div>
           ` : `
             <img class="card-img" src="${item.url}" alt="${originalName}" loading="lazy" />
           `}
-        </div>
 
-        <div class="card-bottom-info">
-          <div class="user-tag">
-            <span class="avatar-circle">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="#64748B"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 1 0-16 0"></path></svg>
-            </span>
-            <span>Anonymous</span>
-          </div>
-
-          <!-- Bottom Action Buttons: Pin & Delete (Replaces Like) -->
-          <div class="card-bottom-actions">
+          <!-- Top-right Floating Pin & Delete Action Bar -->
+          <div class="card-top-actions" onclick="event.stopPropagation()">
             <button class="btn-card-action pin-btn ${isPinned ? 'active' : ''}" onclick="togglePinMedia('${item.id}', event)" title="${isPinned ? 'Unpin' : 'Pin to Top'}">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="${isPinned ? '#F59E0B' : 'none'}" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="17" x2="12" y2="22"></line>
                 <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path>
               </svg>
             </button>
-
             <button class="btn-card-action trash-btn" onclick="deleteMedia('${item.id}', event)" title="Delete Permanently">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
             </button>
+          </div>
+
+          <!-- Bottom Cinematic Gradient Metadata Bar -->
+          <div class="card-cinematic-footer">
+            <div class="cinematic-user-pill">
+              <span class="cinematic-avatar">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="5"></circle><path d="M20 21a8 8 0 1 0-16 0"></path></svg>
+              </span>
+              <span class="cinematic-username">${isVideo ? 'Video' : 'Photo'}</span>
+            </div>
+            <div class="cinematic-stats-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              <span>Live</span>
+            </div>
           </div>
         </div>
       </div>
@@ -856,6 +860,21 @@ async function loadStorageStats() {
     console.error('Failed to load storage stats:', err);
   }
 }
+
+let currentFilter = 'all';
+
+// Setup Tab Filter listeners
+document.addEventListener('DOMContentLoaded', () => {
+  const tabs = document.querySelectorAll('.nav-tab');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentFilter = tab.getAttribute('data-filter') || 'all';
+      render();
+    });
+  });
+});
 
 // Always force the lockscreen PIN keypad every single time the page is opened or reloaded
 function startApp() {
